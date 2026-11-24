@@ -72,3 +72,7 @@ Setelah robot selesai dirakit, buka tab **Otomatis** di panel kanan. **Ambil dan
 ## Perakitan per komponen
 
 Setiap komponen dirakit dulu dari bagian-bagiannya sebelum dipasang ke robot. Setelah komponen dipilih, panel **Rakit** menampilkan daftar bagiannya beserta penjelasan singkat kegunaannya, dan model 3D di meja terisi bagian demi bagian. Urutannya rangka, poros dan bantalan, pelindung, lalu baut dan penanda; tangan lima jari punya lima bagian. Daftar dan penjelasannya ada di `BUILD_STEPS` dalam `lib/game.ts`.
+
+## Alur permainan
+
+Layar awal menampilkan dua robot untuk dipilih: lengan capit dan lengan tangan lima jari. Setelah memilih, setiap komponen yang diambil dari laci masuk ke **ruang rakit**, yaitu tampilan 3D khusus untuk satu komponen di meja putar (`components/ComponentBench.tsx`). Setiap bagian yang dipasang terbang masuk ke tempatnya. Setelah semua bagian terpasang, komponen kembali ke meja utama untuk dipasang ke robot. Tombol **Ganti robot** di kepala halaman membuka layar pilihan lagi tanpa menghapus kemajuan.

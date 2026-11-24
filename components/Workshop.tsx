@@ -6,7 +6,7 @@ import {
   ArrowDownToLine, ArrowRight, BookOpen, Box, Boxes, Check,
   CircleHelp, Crosshair, Expand, Focus, Grab, Hand,
   Layers3, Minus, MousePointer2, Orbit, Plus, RotateCcw,
-  RotateCw, SlidersHorizontal, Sparkles, Square, Undo2, Volume2, VolumeX, Wrench, X, Music, Music2,
+  RotateCw, SlidersHorizontal, Sparkles, Square, Undo2, Repeat2, Star, Play, Volume2, VolumeX, Wrench, X, Music, Music2,
 } from "lucide-react";
 import { JOINT_LIMITS, buildStepsFor, partsFor, turnsToAlign, type RobotMode } from "../lib/game";
 import { PLACE_LAND, createBus, useGameEvents } from "../lib/gameEvents";
@@ -18,6 +18,7 @@ import WristControls from "./WristControls";
 import { useGame, type Game } from "../lib/useGame";
 import { useMotion, type MotionPlayer } from "../lib/useMotion";
 
+const ComponentBench = dynamic(() => import("./ComponentBench"), { ssr: false, loading: () => null });
 const WorkshopScene = dynamic(() => import("./WorkshopScene"), {
   ssr: false,
   loading: () => <div className="scene-loading" role="status"><span />Menyiapkan meja 3D…</div>,
@@ -116,6 +117,41 @@ function AutoPanel({ game, player }: { game: Game; player: MotionPlayer }) {
   </div>;
 }
 
+const ROBOTS: { mode: RobotMode; name: string; tagline: string; image: string; level: number; points: string[] }[] = [
+  { mode: "gripper", name: "Lengan capit", tagline: "Robot pabrik yang memindahkan barang", image: "/parts/assembled.svg", level: 1,
+    points: ["6 komponen, 24 bagian untuk dirakit", "Dua rahang yang menjepit benda", "Bisa mengelas, memindai, dan mengecat"] },
+  { mode: "hand", name: "Lengan tangan lima jari", tagline: "Robot dengan tangan seperti tanganmu", image: "/parts/assembled-hand.svg" + HAND_ASSET_VERSION, level: 2,
+    points: ["6 komponen, 25 bagian untuk dirakit", "Lima jari dan pergelangan yang lentur", "Bisa berhitung, mencubit, dan memutar baut"] },
+];
+
+function RobotMenu({ game, onChoose }: { game: Game; onChoose: (mode: RobotMode, ready?: boolean) => void }) {
+  return <section className="robot-menu" aria-labelledby="menu-title">
+    <div className="menu-intro">
+      <div className="step-kicker">Bengkel Rakitron</div>
+      <h1 id="menu-title">Pilih robot yang mau kamu rakit<span>.</span></h1>
+      <p>Setiap robot dirakit dari enam komponen. Kamu akan merakit tiap komponen dulu di ruang rakit, lalu memasangnya ke robot.</p>
+    </div>
+    <div className="robot-cards">
+      {ROBOTS.map(robot => {
+        const started = game.robotMode === robot.mode && game.count > 0;
+        return <article key={robot.mode} className="robot-card">
+          <div className="robot-picture"><img src={robot.image} alt="" draggable="false"/>
+            <span className="robot-level" aria-label={"Tingkat " + robot.level + " dari 2"}>{[1, 2].map(n => <Star key={n} size={13} fill={n <= robot.level ? "currentColor" : "none"}/>)}{robot.level === 1 ? "Mudah" : "Menantang"}</span>
+          </div>
+          <div className="robot-info">
+            <h2>{robot.name}</h2>
+            <p>{robot.tagline}</p>
+            <ul>{robot.points.map(point => <li key={point}><Check size={13} strokeWidth={3}/>{point}</li>)}</ul>
+            {started && <div className="robot-progress"><span>Sudah terpasang {game.count} dari 6</span><i style={{ width: game.count / 6 * 100 + "%" }}/></div>}
+            <button type="button" className="primary-button" onClick={() => onChoose(robot.mode)}><Play size={16}/><span>{started ? "Lanjutkan merakit" : "Rakit robot ini"}</span><ArrowRight className="end-icon" size={16}/></button>
+            {robot.mode === "hand" && <button type="button" className="text-button robot-skip" onClick={() => onChoose("hand", true)}>Lewati perakitan, coba tangan yang sudah jadi</button>}
+          </div>
+        </article>;
+      })}
+    </div>
+  </section>;
+}
+
 function CameraToolbar({ view, setView, zoom, reset }: { view: View; setView: (v: View) => void; zoom: (n: number) => void; reset: () => void }) {
   const [showViews, setShowViews] = useState(false);
   const viewButtons = [{ key: "perspective" as View, label: "Perspektif" }, { key: "front" as View, label: "Depan" }, { key: "top" as View, label: "Atas" }];
@@ -154,6 +190,8 @@ function Axis() {
 export default function Workshop() {
   const game = useGame();
   const player = useMotion(game);
+  const [screen, setScreen] = useState<"menu" | "workshop">("menu");
+  const [benchHold, setBenchHold] = useState(false);
   const [pane, setPane] = useState<Pane>("parts");
   const [desktopPane, setDesktopPane] = useState<"assembly" | "motion" | "auto">("assembly");
   const [dialog, setDialog] = useState<DialogType>(null);
@@ -270,6 +308,23 @@ export default function Workshop() {
   }
   // Ambil dan taruh memakai seluruh lengan, jadi kamera kembali ke pandangan penuh.
   const autoPlayer: MotionPlayer = { ...player, play: id => { if (id.endsWith("pick-place")) resetCamera(); player.play(id); } };
+  function chooseRobot(mode: RobotMode, ready = false) {
+    if (mode !== game.robotMode) game.setRobotMode(mode);
+    if (ready) game.tryHand();
+    setScreen("workshop");
+    changePane(ready ? "motion" : "assembly");
+    resetCamera();
+  }
+  function openMenu() { player.stop(); setScreen("menu"); window.scrollTo({ top: 0 }); }
+  // Ruang rakit tetap terbuka sebentar setelah bagian terakhir masuk, supaya animasinya terlihat.
+  useEffect(() => {
+    if (selected === null) { setBenchHold(false); return; }
+    if (building) { setBenchHold(true); return; }
+    const timer = setTimeout(() => setBenchHold(false), 1500);
+    return () => clearTimeout(timer);
+  }, [selected, building]);
+  const showBench = selected !== null && !complete && (building || benchHold);
+  const benchPart = selected !== null ? parts[selected] : null;
   function restart() { game.restart(); changePane("parts"); setDesktopPane("assembly"); resetCamera(); setDialog(null); }
 
   return <div className="workshop-app">
@@ -282,31 +337,33 @@ export default function Workshop() {
       <div className="header-actions">
         <button className={`sound-button ${music && sound ? "is-on" : ""}`} title={music ? "Matikan musik" : "Nyalakan musik"} aria-label={music ? "Matikan musik" : "Nyalakan musik"} aria-pressed={music} onClick={toggleMusic}>{music && sound ? <Music2 size={17}/> : <Music size={17}/>}</button>
         <button className={`sound-button ${sound ? "is-on" : ""}`} title={sound ? "Matikan suara" : "Aktifkan suara"} aria-label={sound ? "Matikan suara" : "Aktifkan suara"} aria-pressed={sound} onClick={toggleSound}>{sound ? <Volume2 size={17}/> : <VolumeX size={17}/>}</button>
-        <button className="restart-button" onClick={() => setDialog("restart")}><RotateCcw size={15}/><span>Mulai ulang</span></button>
+        {screen === "workshop" && <button className="restart-button" onClick={openMenu}><Repeat2 size={15}/><span>Ganti robot</span></button>}
+        {screen === "workshop" && <button className="restart-button" onClick={() => setDialog("restart")}><RotateCcw size={15}/><span>Mulai ulang</span></button>}
       </div>
     </div></header>
     <main className="studio" id="bengkel">
+      {screen === "menu" ? <RobotMenu game={game} onChoose={chooseRobot}/> : <>
       <section className="studio-heading" aria-labelledby="workshop-title"><div>
-        <h1 id="workshop-title">Bengkel lengan robot<span>.</span></h1>
-        <p>Rakit lengan robot, uji setiap sendinya, lalu jalankan program otomatis.</p>
+        <h1 id="workshop-title">{isHand ? "Lengan tangan lima jari" : "Lengan capit"}<span>.</span></h1>
+        <p>Rakit tiap komponen di ruang rakit, pasang ke robot, lalu uji geraknya.</p>
       </div><div className="build-progress" role="progressbar" aria-label="Komponen terpasang" aria-valuenow={count} aria-valuemin={0} aria-valuemax={6}>
         <div><span className="progress-name">Progres rakitan</span><span className="progress-count"><strong>{count}</strong> / 6</span></div>
         <div className="progress-track">{parts.map((part, i) => <i key={part.id} className={i < count ? "filled" : ""}/>)}</div>
       </div></section>
-      <div className="model-bar">
-        <div className="model-picker" role="group" aria-label="Pilih model lengan">
-          <span className="model-caption">Model lengan</span>
-          <div className="model-options">
-            <button type="button" aria-pressed={!isHand} onClick={() => chooseModel("gripper")}><Grab size={17}/>Capit paralel</button>
-            <button type="button" aria-pressed={isHand} onClick={() => chooseModel("hand")}><Hand size={17}/>Tangan lima jari</button>
-          </div>
-        </div>
-        {isHand && !complete && <button type="button" className="try-hand" onClick={() => game.tryHand()}>Coba tangan terakit<ArrowRight size={15}/></button>}
-      </div>
       <div className="workspace" data-pane={pane} data-hand-ready={isHand && complete}>
         <section className="scene-panel" aria-label="Meja perakitan tiga dimensi">
           <WorkshopScene game={game} bus={bus} view={view} zoom={zoom} cameraReset={cameraReset} socketFocus={socketFocus}/>
           <Cheer bus={bus} nameOf={i => parts[i]?.name ?? "Komponen"}/>
+          {showBench && benchPart && <div className="bench" role="group" aria-label={"Ruang rakit " + benchPart.name}>
+            <ComponentBench mode={game.robotMode} index={selected!} built={game.built}/>
+            <div className="bench-title"><span>Ruang rakit</span><b>{benchPart.name}</b></div>
+            <div className="bench-dots" aria-hidden="true">{buildSteps.map((part, i) => <i key={part.name} className={i < game.built ? "done" : i === game.built ? "current" : ""}/>)}</div>
+            <div className={`bench-note ${building ? "" : "finished"}`} role="status">
+              {building ? <><small>Bagian {game.built + 1} dari {buildSteps.length}</small><b>{buildSteps[game.built].name}</b></>
+                : <><small>Semua bagian terpasang</small><b>{benchPart.name} selesai!</b></>}
+            </div>
+            <span className="bench-tip">Seret untuk memutar</span>
+          </div>}
           <div className="scene-caption"><span className="live-dot"/><span>Meja kerja</span></div>
           <button className="socket-focus" disabled={complete && !isHand} onClick={() => setSocketFocus(v => v + 1)} title={complete && isHand ? "Lihat tangan" : "Lihat sambungan"}><Crosshair size={14}/><span>{complete && isHand ? "Lihat tangan" : "Lihat sambungan"}</span></button>
           <CameraToolbar view={view} setView={setView} reset={resetCamera} zoom={n => setZoom(v => Math.max(-6, Math.min(8, v + n)))}/>
@@ -342,6 +399,7 @@ export default function Workshop() {
             </ol>}
             <div className="assembly-actions">
               <button ref={primaryAction} className={`primary-button ${!complete && !needsRotation ? "attention" : ""}`} onClick={() => {
+                setBenchHold(false);
                 if (complete) changePane("motion");
                 else if (selected === null) choose(count);
                 else if (building) game.build();
@@ -376,11 +434,12 @@ export default function Workshop() {
       </div>
       <div className="workshop-footer"><span><Orbit size={14}/>Seret meja untuk memutar pandangan.</span><button onClick={() => setDialog("help")}><CircleHelp size={14}/>Bantuan bengkel</button></div>
 
+      </>}
     </main>
     <Dialog kind={dialog} onClose={() => setDialog(null)}>
       {dialog === "help" && <><span className="dialog-symbol"><BookOpen size={24}/></span><h2 id="dialog-title">Cara bermain</h2>
-        <ol className="help-steps"><li><strong>Pilih bagian robot</strong><p>Pilih model lengan, lalu mulai dari alas di laci komponen. Untuk mencoba gestur langsung, pilih Tangan lima jari dan tekan Coba tangan terakit.</p></li>
-          <li><strong>Cocokkan dan pasang</strong><p>Rakit dulu setiap komponen dari bagian-bagiannya, satu per satu, sambil membaca kegunaannya. Lalu, jika diminta, tekan Putar 90° sampai bagian sejajar. Lalu ketuk soket, seret bagian ke soket, atau tekan Pasang komponen.</p></li>
+        <ol className="help-steps"><li><strong>Pilih robot dan komponen</strong><p>Di layar awal, pilih robot yang mau dirakit. Lalu pilih komponen dari laci, mulai dari alas. Tombol Ganti robot membawamu kembali ke layar pilihan.</p></li>
+          <li><strong>Cocokkan dan pasang</strong><p>Komponen yang dipilih masuk ke ruang rakit. Pasang bagiannya satu per satu sambil membaca kegunaannya. Lalu, jika diminta, tekan Putar 90° sampai bagian sejajar. Lalu ketuk soket, seret bagian ke soket, atau tekan Pasang komponen.</p></li>
           <li><strong>Gerakkan rakitanmu</strong><p>Buka Uji gerak untuk mencoba sendi. Pada model tangan, dekatkan lengan ke kubus, atur arah telapak di Pergelangan, lalu buka Jari untuk memilih Genggam atau Cubit.</p></li></ol>
         <div className="shortcuts"><span><kbd>R</kbd> Putar bagian</span><span><kbd>Enter</kbd> Pasang</span><span><kbd>Ctrl/⌘ Z</kbd> Urungkan</span></div>
         <button className="primary-button modal-primary" onClick={() => setDialog(null)}>Kembali ke bengkel<ArrowRight size={16}/></button></>}

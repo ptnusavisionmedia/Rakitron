@@ -383,6 +383,8 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
       deviationPivot.rotation.z = deviation*DEG;
       wristPivot.rotation.x = -pitch*DEG;
     },
+    /** Setiap mesh beserta tahap sub-rakitannya, untuk ruang rakit komponen. */
+    pieces() { return [...staged].map(([mesh, entry]) => ({ mesh, stage: entry.stage })); },
     /** Sub-rakitan: bagian dengan tahap >= `count` tampil sebagai bayangan. `null` menampilkan semuanya. */
     setStage(count: number | null) {
       for (const [shell, entry] of staged) shell.material = count === null || entry.stage < count ? entry.material : ghost;
