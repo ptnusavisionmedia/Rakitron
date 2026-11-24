@@ -1,4 +1,5 @@
-// Efek suara dan musik latar yang disintesis langsung dengan Web Audio, tanpa berkas audio.
+// Efek suara dan musik latar bernuansa robot, disintesis langsung dengan Web Audio tanpa berkas audio:
+// bunyi servo, bip digital, nada FM logam, dan denting besi.
 // Konteks audio baru dibuat setelah anak menyentuh layar, sesuai aturan autoplay browser.
 
 type Audio = { ctx: AudioContext; out: GainNode; music: GainNode; noise: AudioBuffer };
@@ -82,78 +83,137 @@ function hiss(a: Audio, v: Hiss) {
   src.start(start, Math.random() * .5); src.stop(start + v.dur + .03);
 }
 
-function bell(a: Audio, freq: number, at: number, vol: number, dur = .7) {
-  tone(a, { from: freq, dur, vol, at, attack: .004 });
-  tone(a, { from: freq * 2.01, dur: dur * .5, vol: vol * .35, at, attack: .004 });
-  tone(a, { from: freq * 3.99, dur: dur * .25, vol: vol * .12, at, attack: .004 });
+// Nada logam: pembawa dengan modulator FM berfrekuensi tak harmonis sehingga terdengar seperti besi.
+type Metal = { from: number; to?: number; dur: number; vol: number; at?: number; ratio?: number; depth?: number };
+function metal(a: Audio, v: Metal) {
+  const { ctx } = a;
+  const start = ctx.currentTime + shift + (v.at ?? 0);
+  const carrier = ctx.createOscillator();
+  const mod = ctx.createOscillator();
+  const depth = ctx.createGain();
+  const gain = ctx.createGain();
+  carrier.type = "sine"; mod.type = "sine";
+  carrier.frequency.setValueAtTime(v.from, start);
+  if (v.to) carrier.frequency.exponentialRampToValueAtTime(v.to, start + v.dur);
+  mod.frequency.value = v.from * (v.ratio ?? 2.76);
+  depth.gain.setValueAtTime(v.from * (v.depth ?? 1.6), start);
+  depth.gain.exponentialRampToValueAtTime(1, start + v.dur);
+  gain.gain.setValueAtTime(.0001, start);
+  gain.gain.exponentialRampToValueAtTime(v.vol, start + .003);
+  gain.gain.exponentialRampToValueAtTime(.0001, start + v.dur);
+  mod.connect(depth); depth.connect(carrier.frequency);
+  carrier.connect(gain); gain.connect(a.out);
+  carrier.start(start); mod.start(start);
+  carrier.stop(start + v.dur + .03); mod.stop(start + v.dur + .03);
+}
+
+// Rangkaian bip digital cepat berbentuk gelombang kotak, seperti bunyi komputer robot.
+function blips(a: Audio, freqs: number[], gap: number, dur: number, vol: number, at = 0) {
+  freqs.forEach((f, i) => tone(a, {
+    type: "square", from: f, dur, vol, at: at + i * gap, attack: .002,
+    filter: { type: "lowpass", freq: Math.min(5200, f * 3.2), q: 2 },
+  }));
+}
+
+// Desis motor servo: gigi gergaji bergetar halus dengan penyaring yang mengikuti nada.
+function whine(a: Audio, from: number, to: number, dur: number, vol: number, at = 0) {
+  const { ctx } = a;
+  const start = ctx.currentTime + shift + at;
+  const osc = ctx.createOscillator();
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(from, start);
+  osc.frequency.exponentialRampToValueAtTime(to, start + dur);
+  lfo.frequency.value = 38; lfoGain.gain.value = from * .035;
+  filter.type = "bandpass"; filter.Q.value = 5;
+  filter.frequency.setValueAtTime(from * 2.4, start);
+  filter.frequency.exponentialRampToValueAtTime(to * 2.4, start + dur);
+  gain.gain.setValueAtTime(.0001, start);
+  gain.gain.exponentialRampToValueAtTime(vol, start + Math.min(.02, dur / 3));
+  gain.gain.exponentialRampToValueAtTime(.0001, start + dur);
+  lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
+  osc.connect(filter); filter.connect(gain); gain.connect(a.out);
+  osc.start(start); lfo.start(start);
+  osc.stop(start + dur + .03); lfo.stop(start + dur + .03);
+}
+
+// Denting logam: pecahan nada tak harmonis yang cepat meredam, ditambah klik derau.
+function clank(a: Audio, base: number, vol: number, at = 0, dur = .28) {
+  [1, 2.76, 5.4, 8.93].forEach((ratio, i) => tone(a, {
+    from: base * ratio, dur: dur / (1 + i * .7), vol: vol / (1 + i * 1.3), at, attack: .001,
+  }));
+  hiss(a, { dur: .03, vol: vol * .9, at, type: "highpass", from: 3000 });
 }
 
 const sounds: Record<SfxName, (a: Audio, o: PlayOptions) => void> = {
   select(a) {
-    tone(a, { from: 420, to: 700, dur: .11, vol: .22 });
-    tone(a, { type: "triangle", from: 1320, dur: .14, vol: .07, at: .05 });
+    blips(a, [880, 1320], .05, .06, .1);
+    whine(a, 260, 420, .1, .06);
   },
   rotate(a) {
-    hiss(a, { dur: .05, vol: .3, type: "highpass", from: 3200 });
-    tone(a, { type: "square", from: 190, to: 120, dur: .07, vol: .07 });
-    hiss(a, { dur: .05, vol: .18, at: .085, type: "highpass", from: 3600 });
-    tone(a, { type: "square", from: 230, to: 150, dur: .06, vol: .05, at: .085 });
+    whine(a, 180, 260, .08, .08);
+    clank(a, 520, .1, .07, .12);
+    whine(a, 200, 150, .07, .06, .1);
   },
-  whoosh(a) { hiss(a, { dur: .3, vol: .22, type: "bandpass", from: 350, to: 2400, q: 1.3 }); },
+  whoosh(a) {
+    whine(a, 140, 520, .26, .09);
+    hiss(a, { dur: .26, vol: .08, type: "bandpass", from: 500, to: 2600, q: 3 });
+  },
   snap(a) {
-    tone(a, { from: 160, to: 52, dur: .2, vol: .55 });
-    hiss(a, { dur: .04, vol: .4, type: "highpass", from: 2400 });
-    tone(a, { type: "triangle", from: 1480, to: 1380, dur: .3, vol: .09, at: .005 });
+    clank(a, 330, .3, 0, .32);
+    tone(a, { from: 110, to: 45, dur: .16, vol: .5, attack: .002 });
+    blips(a, [1760, 2349], .06, .05, .06, .08);
   },
   note(a, o) {
+    // Setiap komponen yang terpasang menambah satu bip nada naik, seperti konfirmasi komputer.
     const f = SCALE[Math.min(SCALE.length - 1, Math.max(0, o.step ?? 0))];
-    bell(a, f, 0, .2);
-    bell(a, f * 1.5, .09, .12, .5);
+    blips(a, [f, f * 1.5], .07, .08, .1);
+    metal(a, { from: f * 2, dur: .35, vol: .05, at: .02, ratio: 3.5, depth: .8 });
   },
   fanfare(a) {
-    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
-      tone(a, { type: "triangle", from: f, dur: .22, vol: .2, at: i * .11 });
-      tone(a, { type: "square", from: f, dur: .18, vol: .04, at: i * .11, filter: { type: "lowpass", freq: 2200 } });
-    });
-    [1046.5, 1318.5, 1568].forEach(f => bell(a, f, .46, .16, 1.1));
-    for (let i = 0; i < 6; i++) tone(a, { from: 2000 + Math.random() * 2400, dur: .12, vol: .035, at: .5 + i * .07 });
+    blips(a, [523.25, 659.25, 783.99, 1046.5, 1318.5], .075, .1, .12);
+    [1046.5, 1568].forEach((f, i) => metal(a, { from: f, dur: 1, vol: .09, at: .42 + i * .04, ratio: 1.5, depth: .5 }));
+    blips(a, [2093, 1568, 2093, 2637], .05, .05, .05, .55);
   },
   undo(a) {
-    tone(a, { from: 620, to: 250, dur: .15, vol: .2 });
-    hiss(a, { dur: .08, vol: .1, type: "bandpass", from: 1800, to: 500 });
+    blips(a, [740, 520], .05, .06, .09);
+    whine(a, 420, 160, .14, .07);
   },
   servo(a, o) {
     const v = Math.min(1, Math.max(0, o.amount ?? .5));
-    const f = 150 + v * 320;
-    tone(a, { type: "sawtooth", from: f, to: f * 1.12, dur: .09, vol: .05, filter: { type: "lowpass", freq: 1100, q: 4 } });
-    tone(a, { type: "square", from: f * 2, dur: .03, vol: .02, at: .04 });
+    const f = 170 + v * 300;
+    whine(a, f, f * 1.1, .1, .08);
+    tone(a, { type: "square", from: f * 4, dur: .02, vol: .015, at: .05 });
   },
   grab(a) {
-    tone(a, { type: "square", from: 300, to: 520, dur: .07, vol: .1, filter: { type: "lowpass", freq: 2200 } });
-    hiss(a, { dur: .05, vol: .3, at: .06, type: "highpass", from: 2200 });
-    tone(a, { from: 150, to: 70, dur: .12, vol: .3, at: .06 });
-    bell(a, 880, .1, .14, .45);
+    whine(a, 240, 420, .08, .08);
+    clank(a, 410, .28, .07, .22);
+    tone(a, { from: 140, to: 60, dur: .12, vol: .3, at: .07 });
+    blips(a, [1568, 2093], .05, .05, .07, .14);
   },
   release(a) {
-    tone(a, { from: 560, to: 250, dur: .16, vol: .18 });
-    hiss(a, { dur: .18, vol: .12, type: "bandpass", from: 1600, to: 400 });
+    whine(a, 380, 200, .12, .08);
+    clank(a, 300, .16, .08, .16);
+    blips(a, [1175, 880], .05, .05, .06, .12);
   },
   land(a) {
-    tone(a, { from: 125, to: 42, dur: .26, vol: .6 });
-    hiss(a, { dur: .12, vol: .28, type: "lowpass", from: 600 });
+    tone(a, { from: 120, to: 42, dur: .26, vol: .6 });
+    clank(a, 200, .22, .005, .22);
+    hiss(a, { dur: .1, vol: .22, type: "lowpass", from: 600 });
   },
   win(a) {
-    [392, 523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => {
-      tone(a, { type: "triangle", from: f, dur: .24, vol: .2, at: i * .085 });
-      bell(a, f * 2, i * .085 + .02, .06, .5);
-    });
-    [783.99, 1046.5, 1318.5, 1568].forEach(f => bell(a, f, .56, .17, 1.4));
-    for (let i = 0; i < 10; i++) tone(a, { from: 1800 + Math.random() * 3000, dur: .14, vol: .035, at: .6 + i * .06 });
+    blips(a, [392, 523.25, 659.25, 783.99, 1046.5, 1318.5], .08, .1, .13);
+    [783.99, 1046.5, 1318.5].forEach((f, i) => metal(a, { from: f, dur: 1.2, vol: .1, at: .55 + i * .05, ratio: 1.5, depth: .5 }));
+    blips(a, [2093, 2637, 3136, 2637, 3136, 4186], .055, .05, .045, .6);
+    whine(a, 200, 900, .5, .05, .1);
   },
-  magnet(a) { tone(a, { from: 900, to: 1500, dur: .07, vol: .14 }); },
+  magnet(a) { blips(a, [1100, 1650], .03, .035, .08); },
 };
 
-// Lagu latar ringan: akord C - Am - F - G dengan melodi arpeggio dan bas.
+// Lagu latar elektronik: akord C - Am - F - G dengan bas gigi gergaji, arpeggio kotak, dan hi-hat digital.
 const CHORDS = [
   { bass: 48, notes: [60, 64, 67, 72] },
   { bass: 45, notes: [57, 60, 64, 69] },
@@ -175,9 +235,10 @@ function scheduleMusic() {
     const chord = CHORDS[bar];
     const at = nextStep - a.ctx.currentTime;
     const lift = Math.floor(stepIndex / 32) % 2 === 1 ? 12 : 0;
-    if (beat % 4 === 0) tone(a, { type: "triangle", from: midi(chord.bass), dur: STEP * 3.4, vol: .5, at, dest: a.music });
-    tone(a, { type: "sine", from: midi(chord.notes[ARP[beat]] + lift), dur: STEP * 1.9, vol: .32, at, attack: .01, dest: a.music });
-    if (beat % 2 === 1) hiss(a, { dur: .03, vol: .05, at, type: "highpass", from: 7000 });
+    if (beat % 4 === 0) tone(a, { type: "sawtooth", from: midi(chord.bass), dur: STEP * 3.2, vol: .3, at, dest: a.music, filter: { type: "lowpass", freq: 420, q: 3 } });
+    tone(a, { type: "square", from: midi(chord.notes[ARP[beat]] + lift), dur: STEP * 1.3, vol: .1, at, attack: .004, dest: a.music, filter: { type: "lowpass", freq: 1700, q: 2 } });
+    if (beat % 2 === 1) hiss(a, { dur: .025, vol: .06, at, type: "highpass", from: 8000 });
+    if (beat === 4) tone(a, { from: 150, to: 55, dur: .11, vol: .35, at, attack: .002, dest: a.music });
     nextStep += STEP;
     stepIndex++;
   }
