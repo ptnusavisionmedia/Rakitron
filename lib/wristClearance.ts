@@ -1,5 +1,5 @@
 import type { FingerAngles, Joints, Vec3, WristAngles } from "./game";
-import { fingers, getFingerHinges, getThumbHinges, thumbLengths } from "./handKinematics.ts";
+import { fingers, getFingerHinges, getThumbHinges, HAND_PALM_OFFSET, thumbLengths } from "./handKinematics.ts";
 
 type Bounds = readonly [number, number, number, number, number, number];
 type Capsule = { from: Vec3; to: Vec3; radius: number };
@@ -12,6 +12,7 @@ const forearm: Bounds[] = [
   [-.89,-.128,-.133, -.22,.128,.133],
   [-1.17,-.145,-.144, -.89,.145,.144],
 ];
+const carrierBridge: Bounds = [-.044,-.104,-.092, .044,-.079,.092];
 const palm: Capsule[] = [
   { from: [-.133,-.247,-.203], to: [.137,-.247,-.203], radius: .034 },
   { from: [-.117,-.271,-.154], to: [.118,-.271,-.154], radius: .063 },
@@ -44,6 +45,25 @@ function clearanceToSection(a: Vec3, b: Vec3, radius: number, box: Bounds) {
   const t=(lo+hi)/2;
   return Math.hypot(gap(a[0]+dx*t,box[0],box[3]),gap(a[1]+dy*t,box[1],box[4]),
     gap(a[2]+dz*t,box[2],box[5]))-radius;
+}
+
+// The wrist carrier stays vertical as the boom tilts. Its round lower face sits
+// directly under the pin; an axis-aligned square would catch fingers at empty corners.
+function cuffClearance(a: Vec3, b: Vec3, linkRadius: number, pivotY: number) {
+  const bottom = pivotY + .082, top = pivotY + .105, radius = .086;
+  if (Math.max(a[1],b[1])+linkRadius < bottom || Math.min(a[1],b[1])-linkRadius > top) return Infinity;
+  const dx=b[0]-a[0], dy=b[1]-a[1], dz=b[2]-a[2];
+  let low=0, high=1;
+  for (let i=0;i<12;i++) {
+    const t=(low+high)/2;
+    const x=a[0]+dx*t, y=a[1]+dy*t, z=a[2]+dz*t;
+    const radial=Math.hypot(x,z);
+    const slope=(radial>radius ? (1-radius/radial)*(x*dx+z*dz) : 0) + gap(y,bottom,top)*dy;
+    if (slope>0) high=t;
+    else low=t;
+  }
+  const t=(low+high)/2;
+  return Math.hypot(Math.max(0,Math.hypot(a[0]+dx*t,a[2]+dz*t)-radius),gap(a[1]+dy*t,bottom,top))-linkRadius;
 }
 
 function links(angles: FingerAngles, opposition: number, holding: boolean) {
@@ -90,16 +110,24 @@ export function handArmClearance(joints: Joints, wrist: WristAngles, pivot: Vec3
   const cx=Math.cos(wrist.pitch*degrees), sx=Math.sin(wrist.pitch*degrees);
   // Both links share base yaw. Transform each hand point about the real bearing
   // into the forearm's local frame to test its position against the boom.
-  function inForearm(point: Vec3): Vec3 {
-    const x=point[0]-pivot[0], y=point[1]-pivot[1], z=point[2]-pivot[2];
+  function inSocket(point: Vec3): Vec3 {
+    const x=point[0]+HAND_PALM_OFFSET[0]-pivot[0];
+    const y=point[1]+HAND_PALM_OFFSET[1]-pivot[1];
+    const z=point[2]+HAND_PALM_OFFSET[2]-pivot[2];
     const y1=cx*y+sx*z, z1=-sx*y+cx*z;
     const x2=cz*x-sz*y1, y2=sz*x+cz*y1;
     const px=pivot[0]+cy*x2+sy*z1, py=pivot[1]+y2;
-    return [alongX*px+alongY*py, -alongY*px+alongX*py, pivot[2]-sy*x2+cy*z1];
+    return [px,py,pivot[2]-sy*x2+cy*z1];
+  }
+  function inBoom([x,y,z]: Vec3): Vec3 {
+    return [alongX*x+alongY*y,-alongY*x+alongX*y,z];
   }
   let nearest=Infinity;
   for (const link of links(angles,opposition,holding)) {
-    const a=inForearm(link.from), b=inForearm(link.to);
+    const socketA=inSocket(link.from), socketB=inSocket(link.to);
+    nearest=Math.min(nearest,cuffClearance(socketA,socketB,link.radius,pivot[1]),
+      clearanceToSection(socketA,socketB,link.radius,carrierBridge));
+    const a=inBoom(socketA), b=inBoom(socketB);
     for (const box of forearm) nearest=Math.min(nearest,clearanceToSection(a,b,link.radius,box));
   }
   return nearest;

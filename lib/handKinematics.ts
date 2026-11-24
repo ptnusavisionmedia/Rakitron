@@ -1,3 +1,9 @@
+import type { Vec3 } from "./game";
+
+// The bearing and the palm mid-plane share the transverse center of the arm socket.
+export const HAND_WRIST_PIVOT: Vec3 = [0, -.185, 0];
+export const HAND_PALM_OFFSET: Vec3 = [0, -.030, .152];
+
 export const fingers = [
   { key: "index", name: "Index", x: .122, y: -.326, splay: 6.5, width: .070, cubeLimit: .506, lengths: [.137,.101,.073] },
   { key: "middle", name: "Middle", x: .042, y: -.344, splay: 1.5, width: .074, cubeLimit: .443, lengths: [.146,.109,.081] },

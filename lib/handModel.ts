@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import { fingers, getFingerHinges, getThumbHinges, thumbLengths } from "./handKinematics.ts";
-import { HAND_WRIST_PIVOT, type FingerAngles, type WristAngles } from "./game.ts";
+import { HAND_PALM_OFFSET, HAND_WRIST_PIVOT, type FingerAngles, type WristAngles } from "./game.ts";
 
 export type HandAngles = FingerAngles;
 type Point = [number, number, number];
@@ -84,67 +84,62 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
     else p.rotation.x = Math.PI/2;
   }
 
-  // A through-pin fixes the carrier to the forearm's transverse output boss.
-  // The bearing sits on its outboard cheek, directly over the middle of the palm.
+  // Both carrier cheeks pick up the same through axle. Their lower bridge and
+  // cartridge are centered on the forearm, with the palm heel directly below.
   const mount = joint(group,"WristMount");
   const [pivotX,pivotY,pivotZ] = HAND_WRIST_PIVOT;
   const rollPivot = joint(mount,"WristRotor",[pivotX,pivotY,pivotZ]);
   const deviationPivot = joint(rollPivot,"WristGimbal");
   const wristPivot = joint(deviationPivot,"WristArticulation");
-  const palm = joint(wristPivot,"PalmBody",[-pivotX,-pivotY,-pivotZ]);
+  const [palmX,palmY,palmZ] = HAND_PALM_OFFSET;
+  const palm = joint(wristPivot,"PalmBody",[palmX-pivotX,palmY-pivotY,palmZ-pivotZ]);
+  joint(wristPivot,"PalmHeelCenter",[0,-.061,0]);
+
   function turned(parent: THREE.Group, finish: Finish, at: Point, section: Profile) {
     const contour = section.map(([r,y]) => new THREE.Vector2(r,y));
+    // An outward-facing closed lathe has its outside wall running toward +Y.
+    if (THREE.ShapeUtils.isClockWise(contour)) contour.reverse();
     mesh(parent,track(new THREE.LatheGeometry(contour,48)),finish,at);
   }
 
-  pin(mount,"metal",[0,0,0],.048,.201,"z");
-  pin(mount,"frame",[0,0,.092],.071,.014,"z");
-  pin(mount,"casing",[0,0,.103],.054,.010,"z");
-  pin(mount,"inset",[0,0,.111],.020,.007,"z",true);
-  mesh(mount,shape([
-    [-.069,.015],[-.057,.047],[-.035,.065],[.006,.069],[.041,.057],
-    [.063,.029],[.068,-.006],[.064,-.048],[.049,-.071],
-    [-.049,-.071],[-.065,-.040],
-  ],.026,.005),"frame",[0,0,-.105]);
-  pin(mount,"casing",[0,0,-.122],.054,.011,"z");
-  pin(mount,"metal",[0,0,-.131],.033,.009,"z");
-  pin(mount,"inset",[0,0,-.137],.013,.005,"z",true);
-
-  // Hollow machined profiles leave a running clearance between the housing and spindle.
-  const bearingRise = .020;
-  const axis: Point = [pivotX,pivotY+bearingRise,pivotZ];
-  const spindle: Point = [0,bearingRise,0];
-  turned(mount,"frame",axis,[[.048,.066],[.080,.066],[.085,.071],[.085,.091],[.076,.100],[.047,.100],[.045,.096],[.045,.069],[.048,.066]]);
-  turned(mount,"armor",axis,[[.077,.076],[.085,.076],[.086,.079],[.086,.088],[.082,.093],[.077,.093],[.077,.076]]);
-  turned(mount,"rubber",axis,[[.048,.062],[.078,.062],[.081,.065],[.081,.067],[.048,.067],[.048,.062]]);
-  turned(rollPivot,"metal",spindle,[[.022,.050],[.063,.050],[.070,.054],[.070,.059],[.044,.059],[.044,.089],[.023,.089],[.022,.050]]);
-  turned(rollPivot,"frame",spindle,[[.022,.044],[.060,.044],[.064,.047],[.064,.051],[.022,.051],[.022,.044]]);
-  // The orange index on the spindle passes the fixed witness mark once per revolution.
-  shield(mount,"inset",[pivotX,pivotY+bearingRise+.083,pivotZ-.086],.008,.013,.002);
-  shield(rollPivot,"accent",[0,bearingRise+.056,-.070],.017,.008,.003);
-
-  // The rotor fork carries the lateral axis. The cross carries the pitch axle through
-  // the pair of cheeks on the palm. The three axes intersect at the bearing centerline.
-  const forkEar: Profile = [[-.027,.068],[.027,.068],[.020,.016],[.018,-.006],
-    [.010,-.017],[-.007,-.019],[-.019,-.008],[-.020,.013]];
+  const halfCheek: Profile = [[.028,.077],[.053,.065],[.074,.041],[.082,.012],
+    [.081,-.020],[.071,-.045],[.048,-.074],[.042,-.098],[.031,-.104]];
+  const cheekOutline: Profile = [...halfCheek,...halfCheek.slice().reverse().map(([x,y]): [number,number] => [-x,y])];
+  pin(mount,"metal",[0,0,0],.035,.188,"z");
   for (const side of [-1,1]) {
-    mesh(rollPivot,shape(forkEar,.012,.0025),"frame",[0,0,side*.047]);
-    pin(rollPivot,"metal",[0,0,side*.054],.016,.006,"z");
-    pin(rollPivot,"inset",[0,0,side*.058],.007,.0025,"z",true);
+    mesh(mount,shape(cheekOutline,.011,.003),"casing",[0,0,side*.091]);
+    pin(mount,"frame",[0,0,side*.098],.043,.004,"z");
+    pin(mount,"metal",[0,0,side*.101],.034,.004,"z");
+    pin(mount,"inset",[0,0,side*.104],.010,.002,"z",true);
   }
-  mesh(deviationPivot,track(new THREE.SphereGeometry(.023,20,12)),"metal",[0,0,0]);
-  pin(deviationPivot,"metal",[0,0,0],.011,.092,"z");
-  pin(deviationPivot,"frame",[0,0,0],.015,.113,"x");
-  const lug: Profile = [[-.016,.009],[-.007,.018],[.006,.019],[.017,.010],
-    [.017,-.022],[.026,-.056],[-.023,-.056],[-.015,-.023]];
+  // This bridge spans BOTH cheeks underneath the forearm output bearing.
+  mesh(mount,shape([[-.041,-.085],[-.030,-.081],[.030,-.081],[.041,-.085],
+    [.041,-.097],[.034,-.101],[-.034,-.101],[-.041,-.097]],.177,.003),"casing",[0,0,0]);
+
+  const cuff = joint(mount,"WristCuff",[pivotX,pivotY+.089,pivotZ]);
+  // Solid housing with a closed upper face and a narrow spindle running fit.
+  turned(cuff,"casing",[0,0,0],[[.001,.016],[.072,.016],[.080,.013],[.086,.007],
+    [.086,-.001],[.082,-.005],[.048,-.005],[.046,.003],[.001,.003],[.001,.016]]);
+  turned(cuff,"frame",[0,0,0],[[.047,-.007],[.079,-.007],[.082,-.004],[.082,-.002],
+    [.078,.001],[.047,.001],[.047,-.007]]);
+  turned(rollPivot,"metal",[0,0,0],[[.034,.070],[.071,.070],[.078,.074],[.078,.078],
+    [.074,.080],[.045,.080],[.045,.092],[.034,.092],[.034,.070]]);
+  shield(rollPivot,"accent",[0,.075,-.078],.013,.004,.002);
+  // A sealed rotary spindle feeds the gimbal core. The lower ball socket is
+  // part of the palm and pivots on the same point as both tilt axes.
+  turned(rollPivot,"frame",[0,0,0],[[.001,.032],[.035,.032],[.037,.037],[.038,.050],
+    [.047,.062],[.063,.069],[.063,.073],[.001,.073],[.001,.032]]);
+  mesh(deviationPivot,track(new THREE.SphereGeometry(.051,32,22)),"metal",[0,0,0]);
+  turned(wristPivot,"frame",[0,0,0],[[.027,-.045],[.039,-.034],[.048,-.022],[.053,-.006],
+    [.053,.003],[.056,.004],[.060,-.001],[.059,-.014],[.052,-.033],[.042,-.044],
+    [.030,-.052],[.024,-.050],[.027,-.045]]);
   for (const side of [-1,1]) {
-    const cheek = mesh(wristPivot,shape(lug,.012,.0025),"casing",[side*.055,0,0]);
-    cheek.rotation.y = Math.PI/2;
-    pin(wristPivot,"metal",[side*.062,0,0],.015,.006,"x");
-    pin(wristPivot,"inset",[side*.066,0,0],.007,.003,"x",true);
+    pin(wristPivot,"casing",[side*.057,-.009,0],.016,.006,"x");
+    pin(wristPivot,"inset",[side*.061,-.009,0],.006,.002,"x",true);
   }
-  mesh(wristPivot,shape([[-.060,-.044],[.060,-.044],[.076,-.060],[.082,-.085],[-.077,-.085],[-.074,-.062]],.052,.004),
-    "frame",[0,0,-.004]);
+  mesh(wristPivot,shape([[-.031,-.042],[.031,-.042],[.042,-.053],[.072,-.059],
+    [.079,-.069],[.074,-.081],[-.074,-.081],[-.079,-.069],[-.072,-.059],[-.042,-.053]],.061,.004),
+    "frame",[0,0,0]);
   mesh(palm,shape([
     [-.060,-.212],[.060,-.212],[.120,-.213],[.161,-.231],[.167,-.282],[.148,-.331],
     [.072,-.354],[-.046,-.358],[-.138,-.339],[-.174,-.304],[-.172,-.251],[-.141,-.223],
@@ -231,6 +226,9 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
   joint(palm,"GripCenter",[0,-.54,0]);
 
   // Merge rigid pieces per joint and finish, leaving only the articulated groups movable.
+  // The table shadow map cannot resolve the clearances between the cuff and spindle.
+  // Keep their projected shadows and use material lighting on these small surfaces.
+  const wristHardware = new Set([mount,cuff,rollPivot,deviationPivot,wristPivot]);
   const assemblies: THREE.Group[] = [];
   group.traverse(o => { if (o instanceof THREE.Group) assemblies.push(o); });
   for (const assembly of assemblies) {
@@ -251,7 +249,8 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
       pieces.forEach(p => p.dispose());
       baked.add(geometry);
       const shell = new THREE.Mesh(geometry,material);
-      shell.castShadow = shell.receiveShadow = !preview;
+      shell.castShadow = !preview;
+      shell.receiveShadow = !preview && !wristHardware.has(assembly);
       if (preview) shell.raycast = () => {};
       assembly.add(shell);
     }

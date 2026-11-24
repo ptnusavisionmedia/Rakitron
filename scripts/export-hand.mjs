@@ -5,6 +5,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { FINGERS, HAND_PRESETS, NEUTRAL_WRIST } from "../lib/game.ts";
 import { createRoboticHand } from "../lib/handModel.ts";
+import renderPreview from "./render-preview.cjs";
 
 // The Three.js exporter reads its final binary Blob through the browser FileReader API.
 globalThis.FileReader ??= class {
@@ -96,5 +97,17 @@ hand.update(HAND_PRESETS.open.fingers, HAND_PRESETS.open.opposition);
 arm.updateMatrixWorld(true);
 const binary = await new GLTFExporter().parseAsync(arm, { binary: true, animations: clips });
 await writeFile(outputUrl, new Uint8Array(binary));
+// Render the reference card while every component still has its exported placement.
+hand.update({ thumb: 6, index: 3, middle: 4, ring: 7, little: 10 }, 12);
+const partsUrl = new URL("../public/parts/", import.meta.url);
+const assembledCard = renderPreview(arm, "Lengan Rakitron dengan tangan lima jari", [.85,.62,-3.4], 560, 400);
+hand.group.removeFromParent();
+hand.group.position.set(0,0,0);
+hand.group.rotation.set(0,0,Math.PI*.92);
+const handCard = renderPreview(hand.group, "Tangan robot dengan sambungan tengah", [-.80,.52,-3.4], 248, 160);
+await Promise.all([
+  writeFile(new URL("hand.svg",partsUrl),handCard),
+  writeFile(new URL("assembled-hand.svg",partsUrl),assembledCard),
+]);
 hand.dispose();
 console.log(`rakitron-hand.glb · ${joints.length} sendi animasi · ${clips.length} klip · ${binary.byteLength} byte`);

@@ -22,14 +22,18 @@ function pinPenetration(rig, groupName) {
   return deepest;
 }
 
-test('the outer thumb cannot sweep through the fixed forearm pin when flexion and deviation combine', t => {
+test('the open thumb clears the central pin while a closed thumb makes contact at the same compound tilt', t => {
   const {fingers,opposition}=HAND_PRESETS.open;
   const rig=createRoboticHand({angles:fingers,opposition});
   t.after(()=>rig.dispose());
-  const pose={pitch:75,deviation:20,roll:285};
+  const pose={pitch:70,deviation:20,roll:345};
   rig.setWrist(pose);
-  assert.ok(pinPenetration(rig,'ThumbCMC')>.06);
-  assert.ok(handArmClearance(DEFAULT_JOINTS,pose,HAND_WRIST_PIVOT,fingers,opposition,false)<0);
+  assert.ok(pinPenetration(rig,'ThumbCMC')<-.005);
+  assert.ok(handArmClearance(DEFAULT_JOINTS,pose,HAND_WRIST_PIVOT,fingers,opposition,false)>0);
+  const closed=HAND_PRESETS.grasp;
+  rig.update(closed.fingers,closed.opposition);
+  assert.ok(pinPenetration(rig,'ThumbCMC')>.002);
+  assert.ok(handArmClearance(DEFAULT_JOINTS,pose,HAND_WRIST_PIVOT,closed.fingers,closed.opposition,false)<0);
 
   for (const preset of Object.values(HAND_PRESETS)) {
     for (let roll=0;roll<=360;roll+=2) {
@@ -39,7 +43,7 @@ test('the outer thumb cannot sweep through the fixed forearm pin when flexion an
   }
 });
 
-test('a fully flexed open palm clears the axle; curled fingertips cannot pass into it', t => {
+test('an open palm can bend fully in either direction in front of the centered shaft', t => {
   const pose={pitch:75,deviation:0,roll:0};
   const rig=createRoboticHand({angles:HAND_PRESETS.open.fingers});
   t.after(()=>rig.dispose());
@@ -47,7 +51,8 @@ test('a fully flexed open palm clears the axle; curled fingertips cannot pass in
   const check=(preset)=>handArmClearance(DEFAULT_JOINTS,pose,HAND_WRIST_PIVOT,preset.fingers,preset.opposition,false);
   assert.ok(pinPenetration(rig,'MiddleDIP')<0);
   assert.ok(check(HAND_PRESETS.open)>0);
-  rig.update(HAND_PRESETS.grasp.fingers,HAND_PRESETS.grasp.opposition);
-  assert.ok(pinPenetration(rig,'MiddleDIP')>.015);
-  assert.ok(check(HAND_PRESETS.grasp)<0);
+  const extended={...pose,pitch:-65};
+  rig.setWrist(extended);
+  assert.ok(pinPenetration(rig,'MiddleDIP')<0);
+  assert.ok(handArmClearance(DEFAULT_JOINTS,extended,HAND_WRIST_PIVOT,HAND_PRESETS.open.fingers)>0);
 });

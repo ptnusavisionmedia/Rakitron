@@ -38,13 +38,13 @@ Di **Uji gerak → Pergelangan**, penggeser **Putar telapak** memilih sudut 0° 
 
 Di **Uji gerak → Jari**, geser satu jari untuk mengubah tekukannya. Penggeser **Oposisi ibu jari** memutar ibu jari ke arah telunjuk. Tombol **Buka**, **Genggam**, **Cubit** dan **Tunjuk** menggerakkan jari secara bersamaan. Pilih **Lihat tangan** untuk memeriksa ruas dari dekat dan **Atur ulang kamera** untuk melihat meja.
 
-Untuk mencoba misi dengan tangan terbuka, pilih **Lengan**. Dengan pergelangan netral, putar alas ke −135°, atur siku ke −92°, lalu bahu ke 37°. Kembali ke **Jari** dan pilih **Genggam**. Angkat bahu ke 45°, putar alas ke −45° di atas baki, lalu pilih **Buka** untuk melepas kubus.
+Untuk mencoba misi dengan tangan terbuka, pilih **Lengan**. Dengan pergelangan netral, putar alas ke −130°, atur siku ke −92°, lalu bahu ke 38°. Kembali ke **Jari** dan pilih **Genggam**. Angkat bahu ke 48°, putar alas ke −40° di atas baki, lalu pilih **Buka** untuk melepas kubus.
 
 Pada tab **Perakitan**, buka **Model acuan** untuk mengunduh model tangan dan lengan lengkap dalam format GLB. Model ini memuat empat animasi gestur dan satu demonstrasi gerak pergelangan.
 
 ## Aset dan pengujian
 
-- `npm run assets` membuat ulang komponen dasar dan ilustrasi. Jalankan `npm run assets:hand` sesudahnya untuk mengekspor rakitan tangan beserta animasi jari dan pergelangan ke `public/models/rakitron-hand.glb`.
+- `npm run assets` membuat ulang seluruh aset. Gunakan `npm run assets:hand` untuk memperbarui model tangan di `public/models/rakitron-hand.glb` beserta kedua ilustrasinya.
 - `npm test` menguji urutan dan orientasi pemasangan, ketersediaan kendali, penjepitan, pelepasan, serta kondisi keberhasilan misi.
 - `npm run typecheck` memeriksa TypeScript. `npm run build` membuat versi produksi.
 - Proyek menggunakan Next.js App Router, React, TypeScript, Three.js, dan React Three Fiber.

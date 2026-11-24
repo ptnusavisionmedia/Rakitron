@@ -38,15 +38,21 @@ const RENDERER = { antialias:true, alpha:false, powerPreference:"high-performanc
 const SHADOWS = {type:THREE.PCFSoftShadowMap};
 const NAMES = ["Base","Shoulder","UpperArm","Elbow","Forearm","Gripper"] as const;
 const D = Math.PI / 180;
-// The hand slides onto the outboard cross pin; the gripper seats from the distal end of the boom.
+// The hand docks upward into the central wrist seat. The gripper enters along the boom.
 function gripperApproachAngle(game: Game) {
   return game.robotMode === "gripper" ? game.joints.shoulder + game.joints.elbow : null;
 }
 function insertionAxis(index:number, toolApproachAngle:number|null) {
   if (index < 2) return new THREE.Vector3(0,1,0);
-  if (index === 5) return toolApproachAngle === null ? new THREE.Vector3(0,0,-1) :
+  if (index === 5) return toolApproachAngle === null ? new THREE.Vector3(0,-1,0) :
     new THREE.Vector3(Math.cos(toolApproachAngle*D),Math.sin(toolApproachAngle*D),0);
   return new THREE.Vector3(0,0,1);
+}
+
+function handApproachDistance(hand: THREE.Object3D, maximum: number) {
+  hand.updateWorldMatrix(true,true);
+  const bottom = new THREE.Box3().setFromObject(hand).min.y;
+  return Math.min(maximum,Math.max(0,bottom - .015));
 }
 
 const DIRECTIONS = {
@@ -64,7 +70,7 @@ const LOOSE: {pos:V3; rot:V3}[] = [
   {pos:[1.60,.14,-.85],rot:[Math.PI/2,0,-.85]},
   {pos:[2.42,.22,.1],rot:[-.5,.35,-Math.PI/2]},
 ];
-const HAND_SLOT = { pos: [2.16,.25,.12] as V3, rot: [-Math.PI/2,0,.34] as V3 };
+const HAND_SLOT = { pos: [2.16,.113,.12] as V3, rot: [-Math.PI/2,0,.34] as V3 };
 
 function StudioLights() {
   const { gl, scene, invalidate } = useThree();
@@ -147,8 +153,10 @@ function CameraRig({ view, reset, zoom, lock, focus, socket, wrist, controls, in
     const local = socket.current.getWorldQuaternion(new THREE.Quaternion());
     const axis = insertionAxis(inspecting,toolApproachAngle).applyQuaternion(local).normalize();
     const center = socket.current.getWorldPosition(new THREE.Vector3()).addScaledVector(axis,.36);
+    const handSocket = inspecting === 5 && toolApproachAngle === null;
     const direction = inspecting < 2 ? new THREE.Vector3(.68,.84,1).normalize() :
-      new THREE.Vector3(.76,.30,inspecting === 5 && toolApproachAngle === null ? -.78 : .78).applyQuaternion(local).add(new THREE.Vector3(0,.53,0)).normalize();
+      (handSocket ? new THREE.Vector3(.34,.03,-1) : new THREE.Vector3(.76,.30,.78))
+        .applyQuaternion(local).add(new THREE.Vector3(0,.53,0)).normalize();
     const distance = Math.max(3.45,2.3/Math.max(.58,size.width/size.height));
     c.target.copy(center);
     camera.position.copy(center).addScaledVector(direction,distance);
@@ -158,7 +166,7 @@ function CameraRig({ view, reset, zoom, lock, focus, socket, wrist, controls, in
     const c = controls.current;
     if (!c || inspecting !== "hand" || !wrist.current) return;
     const center = wrist.current.localToWorld(palmCenter.fromArray(HAND_INSPECTION_CENTER));
-    const direction = new THREE.Vector3(.52,.25,-1).transformDirection(wrist.current.matrixWorld);
+    const direction = new THREE.Vector3(.36,.15,-1).transformDirection(wrist.current.matrixWorld);
     const distance = Math.max(c.minDistance, 2.0 / Math.max(.25,size.width/size.height));
     c.enableDamping = false;
     c.update();
@@ -265,13 +273,22 @@ function SeatedPart({ children, index, toolApproachAngle }: { children:ReactNode
   const ref = useRef<THREE.Group>(null);
   const elapsed = useRef(0);
   const landed = useRef(false);
+  const travel = useRef(.62);
+  const handSocket = index === 5 && toolApproachAngle === null;
   const fx = useFx();
   const world = useMemo(() => new THREE.Vector3(),[]);
   const invalidate = useThree(s => s.invalidate);
   useLayoutEffect(() => {
     if (prefersReducedMotion()) { elapsed.current = SETTLE; landed.current = true; }
-    else invalidate();
-  },[invalidate]);
+    else {
+      if (handSocket && ref.current && elapsed.current === 0) {
+        ref.current.position.set(0,0,0);
+        travel.current = handApproachDistance(ref.current,.62);
+        ref.current.position.y = -travel.current;
+      }
+      invalidate();
+    }
+  },[handSocket,invalidate]);
   useFrame((_,dt) => {
     const group = ref.current;
     if (!group || elapsed.current >= SETTLE) return;
@@ -279,10 +296,10 @@ function SeatedPart({ children, index, toolApproachAngle }: { children:ReactNode
     elapsed.current = Math.min(SETTLE,elapsed.current + Math.min(dt,.04));
     const t = elapsed.current;
     const approach = Math.min(1,t / PLACE_LAND);
-    group.position.copy(insertionAxis(index,toolApproachAngle)).multiplyScalar(.62 * (1 - approach * approach));
+    group.position.copy(insertionAxis(index,toolApproachAngle)).multiplyScalar(travel.current * (1 - approach * approach));
     const after = Math.max(0,t - PLACE_LAND);
     const scale = t < PLACE_LAND ? 1 + .07 * (1 - approach) : 1 + .12 * Math.exp(-9 * after) * Math.cos(26 * after);
-    group.scale.setScalar(t >= SETTLE ? 1 : scale);
+    group.scale.setScalar(handSocket || t >= SETTLE ? 1 : scale);
     if (t >= PLACE_LAND && !landed.current) {
       landed.current = true;
       group.getWorldPosition(world);
@@ -442,8 +459,11 @@ function LooseParts({ models,game,socket,lock,controls,inspecting,bus }: {
     if (inspecting === index && socket.current) {
       socket.current.getWorldQuaternion(node.quaternion);
       socket.current.getWorldPosition(node.position);
-      const axis = insertionAxis(index,gripperApproachAngle(last.current)).applyQuaternion(node.quaternion);
-      node.position.addScaledVector(axis,index < 2 ? .48 : .76);
+      const toolAngle = gripperApproachAngle(last.current);
+      const axis = insertionAxis(index,toolAngle).applyQuaternion(node.quaternion);
+      const handSocket = index === 5 && toolAngle === null;
+      const travel = handSocket ? handApproachDistance(node,.76) : index < 2 ? .48 : .76;
+      node.position.addScaledVector(axis,travel);
     } else {
       const slot = slotFor(index);
       node.position.set(...slot.pos); node.rotation.set(...slot.rot);
@@ -618,7 +638,7 @@ function LooseParts({ models,game,socket,lock,controls,inspecting,bus }: {
         onPointerUp={i===game.count ? end : undefined}
         onPointerOver={i===game.count ? () => { gl.domElement.style.cursor="grab"; } : undefined}
         onPointerOut={i===game.count ? () => { gl.domElement.style.cursor=""; } : undefined}>
-        <group rotation={selected ? (i < 2 ? [0,game.rotation*D,0] : i===5 ? [game.rotation*D,0,0] : [0,0,game.rotation*D]) : [0,0,0]}>
+        <group rotation={selected ? (i < 2 || (i===5 && game.robotMode === "hand") ? [0,game.rotation*D,0] : i===5 ? [game.rotation*D,0,0] : [0,0,game.rotation*D]) : [0,0,0]}>
           <Pulse active={i===game.count && !selected}><PartModel index={i} source={model} game={game} style={selected ? "selected" : "real"}/></Pulse>
         </group>
       </group>

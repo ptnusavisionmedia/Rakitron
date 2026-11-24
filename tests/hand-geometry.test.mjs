@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { HAND_PRESETS, HAND_WRIST_PIVOT, wristQuaternion } from '../lib/game.ts';
+import { HAND_PALM_OFFSET, HAND_PRESETS, HAND_WRIST_PIVOT, wristQuaternion } from '../lib/game.ts';
 import { createRoboticHand } from '../lib/handModel.ts';
 
 const open = HAND_PRESETS.open.fingers;
+const palmOffset = new THREE.Vector3(...HAND_PALM_OFFSET);
 
 function setup(t) {
   const rig = createRoboticHand({ angles: open });
@@ -77,7 +78,8 @@ test('thumb joints remain on their pins and clear the palm and neighboring digit
           assert.ok(Math.abs(q.y) < 1e-10 && Math.abs(q.z) < 1e-10, 'single-axis hinge');
         }
         for (const p of points.slice(1)) {
-          if (p.x < .17 && p.y > -.35) assert.ok(p.z > -.045, 'palm clearance');
+          const local = p.clone().sub(palmOffset);
+          if (local.x < .17 && local.y > -.35) assert.ok(local.z > -.045, 'palm clearance');
         }
         const finger = index.map(id => point(rig,id));
         assert.ok(minCenterlineDistance(points, finger) > .034, 'thumb crosses the index');
@@ -100,7 +102,7 @@ test('point keeps the index extended and the folded thumb beside the middle fing
   assert.ok(thumb.distanceTo(nearest) < .12);
   assert.ok(thumb.distanceTo(extended) > .25);
   apply(rig, 'grasp');
-  assert.ok(point(rig, 'ThumbTip').z > -.01);
+  assert.ok(point(rig, 'ThumbTip').sub(palmOffset).z > -.01);
   assert.ok(point(rig, 'ThumbMCP').x > .20);
 });
 
@@ -118,7 +120,7 @@ test('the opposed rubber tips meet in a precision pinch', t => {
 
 test('cube contact stops each supporting finger at the surface in both holds', t => {
   const rig = setup(t);
-  const center = new THREE.Vector3(0,-.54,0);
+  const center = point(rig,'GripCenter');
   const v = new THREE.Vector3();
   for (const pose of ['grasp', 'pinch']) {
     apply(rig, pose, true);
@@ -139,6 +141,50 @@ test('cube contact stops each supporting finger at the surface in both holds', t
   }
 });
 
+test('the forearm cradle, solid cuff, rotor and heel connect on one centerline', t => {
+  const rig = setup(t);
+  const mount = node(rig, 'WristMount');
+  const cuff = node(rig, 'WristCuff');
+  const rotor = node(rig, 'WristRotor');
+  const heel = node(rig, 'PalmHeelCenter');
+  rig.group.updateMatrixWorld(true);
+  const bounds = group => {
+    const box = new THREE.Box3();
+    for (const mesh of group.children.filter(child => child.isMesh)) {
+      mesh.geometry.computeBoundingBox();
+      box.union(mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld));
+    }
+    return box;
+  };
+  const fixed = bounds(mount), body = bounds(cuff);
+  const center = box => box.getCenter(new THREE.Vector3());
+  assert.ok(Math.abs(center(fixed).x) < 1e-6 && Math.abs(center(fixed).z) < 1e-6, 'cradle is balanced across the forearm');
+  assert.ok(fixed.max.z > .090 && fixed.max.z < .110);
+  assert.ok(Math.abs(center(body).x) < 1e-6 && Math.abs(center(body).z) < 1e-6, 'cylindrical cuff shares the axle midpoint');
+  assert.ok(fixed.min.y < body.max.y && fixed.max.y > body.max.y, 'upper cradle reaches into the fixed housing');
+  // The front faces must be visible from outside, including the closed shoulder above the spindle.
+  const seat = cuff.getWorldPosition(new THREE.Vector3());
+  for (const axis of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]]) {
+    const normal = new THREE.Vector3(...axis);
+    const origin = seat.clone().addScaledVector(normal,.18);
+    if (axis[1]) origin.x += .02;
+    const hit = new THREE.Raycaster(origin,normal.clone().negate()).intersectObject(cuff,true)[0];
+    assert.ok(hit && hit.face.normal.dot(normal) > .95, 'cuff outer surface faces the viewer');
+    if (axis[1]) assert.ok(hit.point.y > seat.y + .01, 'top shoulder is closed');
+    else assert.ok(hit.point.clone().sub(seat).dot(normal) > .080, 'first hit is the outside of the cuff');
+  }
+
+  for (let roll = 0; roll <= 360; roll += 15) {
+    rig.setWrist({ pitch: 0, deviation: 0, roll });
+    rig.group.updateMatrixWorld(true);
+    for (const group of [cuff, rotor, heel]) {
+      const p = group.getWorldPosition(new THREE.Vector3());
+      assert.ok(Math.hypot(p.x,p.z) < 1e-8, group.name + ' must not orbit around the forearm');
+    }
+    assert.ok(point(rig,'PalmHeelCenter').y < rotor.getWorldPosition(new THREE.Vector3()).y);
+  }
+});
+
 test('rotor, cross and palm use their own axes throughout a complete revolution', t => {
   const rig = setup(t);
   apply(rig, 'point');
@@ -151,7 +197,7 @@ test('rotor, cross and palm use their own axes throughout a complete revolution'
   assert.equal(rig.deviationPivot.parent, rig.rollPivot);
   assert.equal(rig.wristPivot.parent, rig.deviationPivot);
   const distal = new THREE.Vector3(0,-1,0);
-  const rotorMarker = new THREE.Vector3(0,.076,-.070);
+  const rotorMarker = new THREE.Vector3(0,.075,-.078);
   const up = new THREE.Vector3(0,1,0);
   for (const pitch of [-65,0,75]) for (const deviation of [-30,0,20]) {
     for (let roll=-360; roll<=720; roll+=30) {
@@ -171,7 +217,7 @@ test('rotor, cross and palm use their own axes throughout a complete revolution'
   }
 });
 
-test('heel and pitch lugs clear the rotating flange and stationary bearing at maximum tilt', t => {
+test('palm heel and ball socket clear the rotary flange and fixed cuff at maximum tilt', t => {
   const rig = setup(t);
   const pivot = new THREE.Vector3(...HAND_WRIST_PIVOT);
   const samples = group => {
@@ -182,7 +228,9 @@ test('heel and pitch lugs clear the rotating flange and stationary bearing at ma
     }
     return points;
   };
-  const skirt = samples(node(rig,'WristMount')).map(p => p.sub(pivot)).filter(p => {
+  rig.group.updateMatrixWorld(true);
+  const cuff = node(rig,'WristCuff');
+  const skirt = samples(cuff).map(p => cuff.localToWorld(p).sub(pivot)).filter(p => {
     const r = Math.hypot(p.x,p.z);
     return r > .073 && r < .088;
   });

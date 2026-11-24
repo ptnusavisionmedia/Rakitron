@@ -23,7 +23,7 @@ const WorkshopScene = dynamic(() => import("./WorkshopScene"), {
 
 type View = "perspective" | "front" | "top";
 type Pane = "parts" | "assembly" | "motion";
-const HAND_ASSET_VERSION = "?v=rotary360";
+const HAND_ASSET_VERSION = "?v=centered-wrist";
 
 type DialogType = "help" | "reference" | "restart" | null;
 type JointKey = "yaw" | "shoulder" | "elbow";
@@ -348,7 +348,7 @@ export default function Workshop() {
         <div className="shortcuts"><span><kbd>R</kbd> Putar bagian</span><span><kbd>Enter</kbd> Pasang</span><span><kbd>Ctrl/⌘ Z</kbd> Urungkan</span></div>
         <button className="primary-button modal-primary" onClick={() => setDialog(null)}>Kembali ke bengkel<ArrowRight size={16}/></button></>}
       {dialog === "reference" && <><div className="step-kicker">Model acuan</div><h2 id="dialog-title">Lengan robot lengkap</h2><div className="ref-large"><img src={referenceImage} alt={referenceAlt}/></div>
-        <p>{isHand ? "Cincin pergelangan memutar telapak hingga 360°. Sambungan di bawah cincin mengatur tekukan dan kemiringan tangan." : "Ikuti urutan komponen dari alas hingga capit. Coba gerakkan setiap sendi saat sudah terpasang."}</p>
+        <p>{isHand ? "Poros terpasang di tengah ujung lengan bawah dan segaris dengan tengah telapak. Telapak dapat berputar 360°, menekuk, dan miring pada sambungan ini." : "Ikuti urutan komponen dari alas hingga capit. Coba gerakkan setiap sendi saat sudah terpasang."}</p>
         {isHand && <a className="hand-download" href={"/models/rakitron-hand.glb" + HAND_ASSET_VERSION} download="Rakitron-Tangan-Lima-Jari.glb"><ArrowDownToLine size={16}/>Unduh model 3D (.glb)</a>}</>}
       {dialog === "restart" && <><span className="dialog-symbol"><RotateCcw size={24}/></span><h2 id="dialog-title">Mulai rakitan baru?</h2><p>Komponen akan kembali ke laci dan kubus akan kembali ke posisi awal.</p>
         <div className="confirm-buttons"><button className="secondary-button" onClick={() => setDialog(null)}>Lanjut bermain</button><button className="primary-button" onClick={restart}>Mulai ulang<RotateCcw size={15}/></button></div></>}

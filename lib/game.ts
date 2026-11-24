@@ -1,7 +1,8 @@
 import { handArmClearance } from './wristClearance.ts';
+import { HAND_PALM_OFFSET, HAND_WRIST_PIVOT } from './handKinematics.ts';
+export { HAND_PALM_OFFSET, HAND_WRIST_PIVOT };
 
 export type Vec3 = [number, number, number];
-export const HAND_WRIST_PIVOT: Vec3 = [0, -.155, -.145];
 export type RobotMode = 'gripper' | 'hand';
 export const FINGERS = ['thumb', 'index', 'middle', 'ring', 'little'] as const;
 export type Finger = typeof FINGERS[number];
@@ -25,6 +26,7 @@ export const NEUTRAL_WRIST: WristAngles = { pitch: 0, deviation: 0, roll: 0 };
 export type Quaternion = [number, number, number, number];
 export type Cube = {
   position: Vec3; orientation: Quaternion; yaw: number; mode: 'rest' | 'held' | 'falling'; speed: number;
+  atStart?: boolean;
   handContact?: { offset: Vec3; orientation: Quaternion };
 };
 
@@ -108,7 +110,7 @@ export function getPose(joints: Joints, mode: RobotMode = 'gripper', wristAngles
   const orientation = wristQuaternion(hand ? wristAngles : NEUTRAL_WRIST, joints.yaw);
   // The fixed housing ends at this bearing. The fingers and grasp point rotate below it.
   const pivot = hand ? add(wrist, rotateVector(HAND_WRIST_PIVOT, wristQuaternion(NEUTRAL_WRIST, joints.yaw))) : wrist;
-  const neutralGrip: Vec3 = [0,-GRIP_DEPTH[mode],0];
+  const neutralGrip: Vec3 = hand ? add([0,-GRIP_DEPTH.hand,0],HAND_PALM_OFFSET) : [0,-GRIP_DEPTH.gripper,0];
   const gripOffset = hand ? difference(neutralGrip,HAND_WRIST_PIVOT) : neutralGrip;
   return {
     elbow: rotatedPoint(yaw, upperRadius, upperHeight), wrist, pivot, orientation,
@@ -121,8 +123,10 @@ const delivery = getPose({ yaw: -45, shoulder: 30, elbow: -90 }).grip;
 export const CUBE_START: Vec3 = [pickup[0], HALF_CUBE, pickup[2]];
 export const TRAY = { x: delivery[0], z: delivery[2], y: 0.045, width: 0.76, depth: 0.69, yaw: -45 };
 
-function newCube(): Cube {
-  return { position: [...CUBE_START], orientation: wristQuaternion(NEUTRAL_WRIST, -135), yaw: -135, mode: 'rest', speed: 0 };
+function newCube(mode: RobotMode): Cube {
+  // Each tool's neutral pickup faces the same point from a slightly different angle.
+  const yaw = mode === 'hand' ? -130 : -135;
+  return { position: [...CUBE_START], orientation: wristQuaternion(NEUTRAL_WRIST,yaw), yaw, mode: 'rest', speed: 0, atStart: true };
 }
 
 export type GameState = {
@@ -145,7 +149,7 @@ export function initialState(robotMode: RobotMode = 'gripper'): GameState {
   return {
     robotMode, fingers: { ...HAND_PRESETS.open.fingers }, wrist: { ...NEUTRAL_WRIST }, opposition: 0,
     count: 0, selected: null, rotation: 0, joints: { ...DEFAULT_JOINTS }, gap: OPEN_GAP,
-    cube: newCube(), won: false, hint: 'Pilih alas putar dari laci komponen.', highlight: null,
+    cube: newCube(robotMode), won: false, hint: 'Pilih alas putar dari laci komponen.', highlight: null,
   };
 }
 
@@ -231,7 +235,7 @@ function jointHint(state: GameState, joints: Joints) {
 // Outer contact points of the wrist, palm, extended digits and thumb in the hand's local frame.
 // Include both faces and poses so opening a finger cannot push it through the tabletop.
 const neutralHandEnvelope: Vec3[] = [
-  [0,0,-.14], [0,0,.14], [-.18,-.35,-.24], [.18,-.35,-.24],
+  [-.18,-.35,-.24], [.18,-.35,-.24],
   [-.18,-.35,.12], [.18,-.35,.12], [-.17,-.59,-.24], [.16,-.65,-.24],
   [-.077,-.66,-.24], [-.077,-.66,-.21], [.05,-.686,-.24], [-.14,-.58,.10], [.13,-.60,.12],
   // Mid-curl fingertip pads can reach the table before the fully extended hand.
@@ -239,7 +243,7 @@ const neutralHandEnvelope: Vec3[] = [
   [-.073,-.656,-.161],
   [.51,-.50,.14], [.20,-.52,.21],
 ];
-const handEnvelope = neutralHandEnvelope.map(point => difference(point, HAND_WRIST_PIVOT));
+const handEnvelope = neutralHandEnvelope.map(point => difference(add(point,HAND_PALM_OFFSET),HAND_WRIST_PIVOT));
 
 // Keep the two endpoints of the position slider available (0 and 360).
 // A relative turn may pass either of them, so wrap its accepted end position.
@@ -361,7 +365,7 @@ function closeGripper(state: GameState): GameState {
   const withinPads = Math.abs(p[1] - grip[1]) <= 0.22 && Math.abs(x) <= 0.28;
   if (state.cube.mode === 'rest' && withinPads && Math.abs(z) + half <= state.gap / 2 + 0.12) {
     return {
-      ...state, cube: { ...state.cube, mode: 'held', yaw: state.joints.yaw, orientation: wristQuaternion(NEUTRAL_WRIST, state.joints.yaw),
+      ...state, cube: { ...state.cube, mode: 'held', atStart: false, yaw: state.joints.yaw, orientation: wristQuaternion(NEUTRAL_WRIST, state.joints.yaw),
         position: [grip[0], Math.max(grip[1], HALF_CUBE), grip[2]] },
       gap: CUBE_SIZE, highlight: 'grip', hint: 'Kubus terjepit! Angkat lengan dan putar ke arah baki biru.',
     };
@@ -386,7 +390,7 @@ function nextHandPose(state: GameState, fingers: FingerAngles, opposition: numbe
     const pose = getPose(state.joints, 'hand', state.wrist);
     const contact = inHand(pose.orientation, pose.grip, state.cube);
     if (contact.betweenPads && contact.alignedHeight) {
-      return { ...next, won: false, cube: { ...state.cube, mode: 'held',
+      return { ...next, won: false, cube: { ...state.cube, mode: 'held', atStart: false,
         handContact: { offset: contact.offset, orientation: contact.orientation } },
         hint: 'Kubus terpegang. Angkat lengan, lalu putar alas menuju baki biru.' };
     }
@@ -450,7 +454,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
       const rotation = selected === null ? 0 : state.rotation;
       return { ...state, robotMode: action.mode, count, selected, rotation,
         fingers: { ...HAND_PRESETS.open.fingers }, opposition: 0, wrist: { ...NEUTRAL_WRIST }, gap: OPEN_GAP, highlight: null, won: false,
-        cube: state.cube.mode === 'held' ? releaseCube(state.cube) : state.cube,
+        cube: state.cube.mode === 'held' ? releaseCube(state.cube) : state.cube.atStart ? newCube(action.mode) : state.cube,
         hint: assemblyHint(action.mode, count, selected, rotation) };
     }
     case 'wrist': {
@@ -543,7 +547,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
         state.count === 6 ? (state.robotMode === 'hand' ? 'Kubus ada di luar baki. Genggam kembali atau kembalikan kubus.' : 'Kubus ada di luar baki. Jepit lagi atau kembalikan kubus.') : assemblyHint(state.robotMode, state.count, state.selected, state.rotation) };
     }
     case 'resetCube':
-      return { ...state, cube: newCube(), won: false, gap: OPEN_GAP, fingers: { ...HAND_PRESETS.open.fingers }, opposition: 0, highlight: null, hint: assemblyHint(state.robotMode, state.count, state.selected, state.rotation) };
+      return { ...state, cube: newCube(state.robotMode), won: false, gap: OPEN_GAP, fingers: { ...HAND_PRESETS.open.fingers }, opposition: 0, highlight: null, hint: assemblyHint(state.robotMode, state.count, state.selected, state.rotation) };
     case 'restart': return initialState(state.robotMode);
   }
 }

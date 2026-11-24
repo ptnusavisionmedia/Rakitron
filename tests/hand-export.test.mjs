@@ -102,6 +102,47 @@ test('export keeps the wrist housing fixed and reproduces the three joint axes t
   rig.setWrist(NEUTRAL_WRIST);
 });
 
+test('downloaded wrist shares the lateral center of the forearm tip and palm heel', () => {
+  const forearm = find(model.scene, 'Forearm');
+  const socket = find(forearm, 'SocketGripper');
+  const hand = find(forearm, 'RoboticHand');
+  const rotor = find(hand, 'WristRotor');
+  const local = (frame, node) => frame.worldToLocal(node.getWorldPosition(new Vector3()));
+  const socketAt = local(forearm, socket);
+  const rotorAt = local(forearm, rotor);
+
+  // The GLB stores the forearm surfaces merged by material. Measure the actual
+  // transverse tip bearing independently of the named socket used for assembly.
+  let minZ = Infinity, maxZ = -Infinity;
+  const vertex = new Vector3();
+  forearm.updateWorldMatrix(true, true);
+  const fromWorld = forearm.matrixWorld.clone().invert();
+  for (const child of forearm.children) {
+    if (child === hand) continue;
+    child.traverse(mesh => {
+      if (!mesh.isMesh) return;
+      const vertices = mesh.geometry.getAttribute('position');
+      const toForearm = fromWorld.clone().multiply(mesh.matrixWorld);
+      for (let i=0; i<vertices.count; i++) {
+        vertex.fromBufferAttribute(vertices, i).applyMatrix4(toForearm);
+        if (Math.abs(vertex.x - socketAt.x) > .045) continue;
+        minZ = Math.min(minZ, vertex.z);
+        maxZ = Math.max(maxZ, vertex.z);
+      }
+    });
+  }
+  assert.ok(maxZ - minZ > .12, 'no physical forearm bearing found');
+  assert.ok(Math.abs(rotorAt.z - (minZ + maxZ)/2) < .001, 'rotor hangs on one cheek of the bearing');
+
+  const socketLocal = local(hand, socket);
+  const rotorLocal = local(hand, rotor);
+  const heelLocal = local(hand, find(hand, 'PalmHeelCenter'));
+  for (const point of [rotorLocal, heelLocal]) {
+    assert.ok(Math.hypot(point.x - socketLocal.x, point.z - socketLocal.z) < .001, 'axis offset from socket');
+  }
+  assert.ok(heelLocal.y < rotorLocal.y && rotorLocal.y < socketLocal.y, 'socket, rotor and palm heel order');
+});
+
 test('every exported gesture finishes at the runtime pose, including all three thumb joints', () => {
   const digitalJoints = ['ThumbCMC', 'ThumbMCP', 'ThumbIP'];
   for (const finger of ['Index', 'Middle', 'Ring', 'Little']) {
