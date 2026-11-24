@@ -272,7 +272,9 @@ function Model({ source, style="real", gap, layers }: { source: THREE.Object3D; 
   useLayoutEffect(() => {
     if (gap === undefined) return;
     // Tampilan pertama dan pengguna yang mengurangi gerak langsung ke posisi akhir.
-    if (shownGap.current === null || prefersReducedMotion()) { shownGap.current = gap; setJaws(gap); }
+    if (shownGap.current === null || prefersReducedMotion()) shownGap.current = gap;
+    // Model dibuat ulang saat gayanya berubah (misalnya disorot), jadi rahangnya selalu diposisikan lagi.
+    setJaws(shownGap.current);
     invalidate();
   },[node,gap,invalidate]);
   useFrame((_,dt) => {
