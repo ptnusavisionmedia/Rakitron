@@ -68,3 +68,7 @@ Pada Uji gerak, sendi berbunyi seperti servo, capit atau tangan berbunyi saat me
 ## Gerak otomatis
 
 Setelah robot selesai dirakit, buka tab **Otomatis** di panel kanan. **Ambil dan taruh otomatis** membuat robot mengambil kubus kuning dan menaruhnya di baki biru sendiri. Di bawahnya ada empat animasi gerak untuk tiap model: capit paralel punya Kalibrasi sumbu, Pindai area kerja, Las titik, dan Semprot cat; tangan lima jari punya Uji jari berurutan, Hitung satu sampai lima, Kencangkan baut, dan Uji rentang pergelangan. Tekan program yang sedang berjalan untuk menghentikannya. Program berjalan lewat aksi yang sama dengan kontrol manual, jadi batas sendi dan tabrakan tetap berlaku. Urutannya ada di `lib/motions.ts`.
+
+## Perakitan per komponen
+
+Setiap komponen dirakit dulu dari bagian-bagiannya sebelum dipasang ke robot. Setelah komponen dipilih, panel **Rakit** menampilkan daftar bagiannya beserta penjelasan singkat kegunaannya, dan model 3D di meja terisi bagian demi bagian. Urutannya rangka, poros dan bantalan, pelindung, lalu baut dan penanda; tangan lima jari punya lima bagian. Daftar dan penjelasannya ada di `BUILD_STEPS` dalam `lib/game.ts`.

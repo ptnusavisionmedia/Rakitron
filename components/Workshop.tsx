@@ -8,7 +8,7 @@ import {
   Layers3, Minus, MousePointer2, Orbit, Plus, RotateCcw,
   RotateCw, SlidersHorizontal, Sparkles, Square, Undo2, Volume2, VolumeX, Wrench, X, Music, Music2,
 } from "lucide-react";
-import { JOINT_LIMITS, partsFor, turnsToAlign, type RobotMode } from "../lib/game";
+import { JOINT_LIMITS, buildStepsFor, partsFor, turnsToAlign, type RobotMode } from "../lib/game";
 import { PLACE_LAND, createBus, useGameEvents } from "../lib/gameEvents";
 import { sfx } from "../lib/sfx";
 import AutoControls from "./AutoControls";
@@ -176,7 +176,9 @@ export default function Workshop() {
   const isHand = game.robotMode === "hand";
   const referenceImage = isHand ? "/parts/assembled-hand.svg" + HAND_ASSET_VERSION : "/parts/assembled.svg";
   const referenceAlt = isHand ? "Lengan robot lengkap dengan tangan lima jari" : "Lengan robot lengkap dengan capit paralel";
-  const needsRotation = selected !== null && turnsToAlign(game.rotation) > 0;
+  const buildSteps = selected !== null ? buildStepsFor(game.robotMode, selected) : [];
+  const building = selected !== null && game.built < buildSteps.length;
+  const needsRotation = selected !== null && !building && turnsToAlign(game.rotation) > 0;
 
   useGameEvents(game, bus);
   // Suara menyala secara bawaan; pilihan anak disimpan. Browser baru mengizinkan bunyi setelah sentuhan pertama.
@@ -196,6 +198,7 @@ export default function Workshop() {
     switch (event.type) {
       case "select": sfx.play("select"); break;
       case "rotate": sfx.play("rotate"); break;
+      case "built": sfx.play("snap"); sfx.play("note", { delay: .04, step: event.step }); break;
       case "placed":
         if (event.bulk) break;
         sfx.play("whoosh");
@@ -322,24 +325,31 @@ export default function Workshop() {
             <button aria-pressed={desktopPane === "auto"} disabled={!complete} title={complete ? undefined : "Selesaikan rakitan dulu"} onClick={() => changePane("auto")}><i>3</i>Otomatis</button>
           </div>
           {desktopPane === "assembly" ? <div className="guide-body">
-            <button className="reference-card" aria-label="Perbesar model acuan lengan robot" onClick={() => setDialog("reference")}>
+            {(selected === null || complete) && <button className="reference-card" aria-label="Perbesar model acuan lengan robot" onClick={() => setDialog("reference")}>
               <span className="ref-caption"><span/>Model acuan</span>
               <img src={referenceImage} alt={referenceAlt} draggable="false"/>
               <span className="ref-expand"><Expand size={12}/></span>
-            </button>
+            </button>}
             <div className="guide-direction"><div className="step-kicker">{complete ? "Perakitan selesai" : `Langkah ${String(count + 1).padStart(2, "0")} / 06`}</div>
-              <h2>{complete ? "Robot siap bergerak!" : `Pasang ${next.name.toLocaleLowerCase("id")}`}</h2>
+              <h2>{complete ? "Robot siap bergerak!" : `${building ? "Rakit" : "Pasang"} ${next.name.toLocaleLowerCase("id")}`}</h2>
               <p aria-live="polite">{game.hint}</p>
             </div>
+            {selected !== null && !complete && <ol className="build-steps" aria-label={"Bagian " + next.name}>
+              {buildSteps.map((part, i) => <li key={part.name} className={i < game.built ? "done" : i === game.built ? "current" : ""}>
+                <i>{i < game.built ? <Check size={11} strokeWidth={3}/> : i + 1}</i>
+                <span><b>{part.name}</b>{(i === game.built || (!building && i === buildSteps.length - 1)) && <small>{part.detail}</small>}</span>
+              </li>)}
+            </ol>}
             <div className="assembly-actions">
               <button ref={primaryAction} className={`primary-button ${!complete && !needsRotation ? "attention" : ""}`} onClick={() => {
                 if (complete) changePane("motion");
                 else if (selected === null) choose(count);
+                else if (building) game.build();
                 else if (needsRotation) game.rotate();
                 else game.place(0, selected);
-              }}>{complete ? <SlidersHorizontal size={17}/> : selected === null ? <MousePointer2 size={17}/> : needsRotation ? <RotateCw size={17}/> : <ArrowDownToLine size={17}/>}
-              <span>{complete ? "Buka kontrol gerak" : selected === null ? "Pilih komponen" : needsRotation ? "Putar 90°" : "Pasang komponen"}</span><ArrowRight className="end-icon" size={16}/></button>
-              <div className="secondary-actions"><button disabled={selected === null || complete} onClick={() => game.rotate()} title="Putar komponen" aria-label="Putar komponen"><RotateCw size={14}/>Putar 90°</button>
+              }}>{complete ? <SlidersHorizontal size={17}/> : selected === null ? <MousePointer2 size={17}/> : building ? <Wrench size={17}/> : needsRotation ? <RotateCw size={17}/> : <ArrowDownToLine size={17}/>}
+              <span>{complete ? "Buka kontrol gerak" : selected === null ? "Pilih komponen" : building ? `Pasang ${buildSteps[game.built].name.toLocaleLowerCase("id")}` : needsRotation ? "Putar 90°" : "Pasang ke robot"}</span><ArrowRight className="end-icon" size={16}/></button>
+              <div className="secondary-actions"><button disabled={selected === null || complete || building} onClick={() => game.rotate()} title="Putar komponen" aria-label="Putar komponen"><RotateCw size={14}/>Putar 90°</button>
                 <button disabled={count === 0} onClick={() => game.undo()} title="Lepas bagian terakhir" aria-label="Lepas bagian terakhir"><Undo2 size={15}/>Urungkan</button></div>
             </div>
           </div> : desktopPane === "auto" && complete ? <AutoPanel game={game} player={autoPlayer}/>
@@ -370,7 +380,7 @@ export default function Workshop() {
     <Dialog kind={dialog} onClose={() => setDialog(null)}>
       {dialog === "help" && <><span className="dialog-symbol"><BookOpen size={24}/></span><h2 id="dialog-title">Cara bermain</h2>
         <ol className="help-steps"><li><strong>Pilih bagian robot</strong><p>Pilih model lengan, lalu mulai dari alas di laci komponen. Untuk mencoba gestur langsung, pilih Tangan lima jari dan tekan Coba tangan terakit.</p></li>
-          <li><strong>Cocokkan dan pasang</strong><p>Jika diminta, tekan Putar 90° sampai bagian sejajar. Lalu ketuk soket, seret bagian ke soket, atau tekan Pasang komponen.</p></li>
+          <li><strong>Cocokkan dan pasang</strong><p>Rakit dulu setiap komponen dari bagian-bagiannya, satu per satu, sambil membaca kegunaannya. Lalu, jika diminta, tekan Putar 90° sampai bagian sejajar. Lalu ketuk soket, seret bagian ke soket, atau tekan Pasang komponen.</p></li>
           <li><strong>Gerakkan rakitanmu</strong><p>Buka Uji gerak untuk mencoba sendi. Pada model tangan, dekatkan lengan ke kubus, atur arah telapak di Pergelangan, lalu buka Jari untuk memilih Genggam atau Cubit.</p></li></ol>
         <div className="shortcuts"><span><kbd>R</kbd> Putar bagian</span><span><kbd>Enter</kbd> Pasang</span><span><kbd>Ctrl/⌘ Z</kbd> Urungkan</span></div>
         <button className="primary-button modal-primary" onClick={() => setDialog(null)}>Kembali ke bengkel<ArrowRight size={16}/></button></>}

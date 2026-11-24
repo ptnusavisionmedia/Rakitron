@@ -192,8 +192,11 @@ function CameraRig({ view, reset, zoom, lock, focus, socket, wrist, controls, in
 }
 
 type ModelStyle = "real" | "selected" | "active" | "blueprint" | "socket-preview";
-function Model({ source, style="real", gap }: { source: THREE.Object3D; style?: ModelStyle; gap?: number }) {
-  const { node, materials, outlines } = useMemo(() => {
+// Lapisan sub-rakitan mengikuti bahan: rangka, poros dan bantalan, pelindung, lalu baut dan penanda.
+const LAYER: Record<string, number> = { frame: 0, deep: 0, silver: 1, bright: 1, bore: 1, porcelain: 2, shell: 2 };
+function Model({ source, style="real", gap, layers }: { source: THREE.Object3D; style?: ModelStyle; gap?: number; layers?: number }) {
+  const invalidate = useThree(s => s.invalidate);
+  const { node, materials, outlines, finished, pending } = useMemo(() => {
     const node = source.clone(true);
     node.position.set(0,0,0); node.quaternion.identity(); node.scale.set(1,1,1); node.updateMatrix();
     const materials: THREE.Material[] = [];
@@ -212,6 +215,12 @@ function Model({ source, style="real", gap }: { source: THREE.Object3D; style?: 
     if (edgeMaterial) materials.push(edgeMaterial);
     const shapes: THREE.Mesh[] = [];
     node.traverse(o => { if (o instanceof THREE.Mesh) shapes.push(o); });
+    for (const mesh of shapes) {
+      const name = Array.isArray(mesh.material) ? mesh.material[0]?.name : mesh.material.name;
+      mesh.userData.layer = LAYER[name] ?? 3;
+    }
+    const pending = new THREE.MeshBasicMaterial({ color:"#5b8f7a", transparent:true, opacity:.11, depthWrite:false });
+    materials.push(pending);
     const replacements = new Map<THREE.Material,THREE.Material>();
     const tint = (mat:THREE.Material) => {
       if (replacements.has(mat)) return replacements.get(mat)!;
@@ -241,30 +250,55 @@ function Model({ source, style="real", gap }: { source: THREE.Object3D; style?: 
         mesh.material = Array.isArray(mesh.material) ? mesh.material.map(tint) : tint(mesh.material);
       }
     }
-    return {node,materials,outlines};
+    const finished = new Map<THREE.Mesh,THREE.Material|THREE.Material[]>();
+    for (const mesh of shapes) finished.set(mesh,mesh.material);
+    return {node,materials,outlines,finished,pending};
   },[source,style]);
+  useLayoutEffect(() => {
+    for (const [mesh,material] of finished) {
+      const shown = layers === undefined || mesh.userData.layer < layers;
+      mesh.material = shown ? material : pending;
+      if (style === "real" || style === "selected" || style === "active") mesh.castShadow = shown;
+    }
+    invalidate();
+  },[finished,pending,layers,style,invalidate]);
   useEffect(() => () => { materials.forEach(m => m.dispose()); outlines.forEach(g => g.dispose()); },[materials,outlines]);
+  const shownGap = useRef<number | null>(null);
+  const setJaws = (value: number) => {
+    const left = node.getObjectByName("JawLeft"), right = node.getObjectByName("JawRight");
+    if (left) left.position.z = value/2 + .065;
+    if (right) right.position.z = -(value/2 + .065);
+  };
   useLayoutEffect(() => {
     if (gap === undefined) return;
-    const left = node.getObjectByName("JawLeft"), right = node.getObjectByName("JawRight");
-    if (left) left.position.z = gap/2 + .065;
-    if (right) right.position.z = -(gap/2 + .065);
-  },[node,gap]);
+    // Tampilan pertama dan pengguna yang mengurangi gerak langsung ke posisi akhir.
+    if (shownGap.current === null || prefersReducedMotion()) { shownGap.current = gap; setJaws(gap); }
+    invalidate();
+  },[node,gap,invalidate]);
+  useFrame((_,dt) => {
+    if (gap === undefined || shownGap.current === null || shownGap.current === gap) return;
+    noteMotion();
+    const travel = .42 * Math.min(dt,.05);
+    const delta = gap - shownGap.current;
+    shownGap.current = Math.abs(delta) <= travel ? gap : shownGap.current + Math.sign(delta) * travel;
+    setJaws(shownGap.current);
+    invalidate();
+  });
   return <primitive object={node} dispose={null} />;
 }
 
-function PartModel({ index, source, game, style, attached = false, wristRef }: {
+function PartModel({ index, source, game, style, attached = false, wristRef, layers }: {
   index: number; source: THREE.Object3D; game: Game; style: ModelStyle; attached?: boolean;
-  wristRef?: RefObject<THREE.Group|null>;
+  wristRef?: RefObject<THREE.Group|null>; layers?: number;
 }) {
   if (index === 5 && game.robotMode === "hand") {
     return <RoboticHand angles={game.fingers} opposition={game.opposition}
       wrist={attached ? game.wrist : undefined}
       wristRef={attached ? wristRef : undefined} holding={attached && game.cube.mode === "held"}
       preview={style === "blueprint" || style === "socket-preview"}
-      highlighted={style === "selected" || style === "active"} />;
+      highlighted={style === "selected" || style === "active"} stage={layers} />;
   }
-  return <Model source={source} style={style} gap={index === 5 ? game.gap : undefined} />;
+  return <Model source={source} style={style} gap={index === 5 ? game.gap : undefined} layers={layers} />;
 }
 
 const SETTLE = .8;
@@ -639,7 +673,7 @@ function LooseParts({ models,game,socket,lock,controls,inspecting,bus }: {
         onPointerOver={i===game.count ? () => { gl.domElement.style.cursor="grab"; } : undefined}
         onPointerOut={i===game.count ? () => { gl.domElement.style.cursor=""; } : undefined}>
         <group rotation={selected ? (i < 2 || (i===5 && game.robotMode === "hand") ? [0,game.rotation*D,0] : i===5 ? [game.rotation*D,0,0] : [0,0,game.rotation*D]) : [0,0,0]}>
-          <Pulse active={i===game.count && !selected}><PartModel index={i} source={model} game={game} style={selected ? "selected" : "real"}/></Pulse>
+          <Pulse active={i===game.count && !selected}><PartModel index={i} source={model} game={game} style={selected ? "selected" : "real"} layers={selected ? game.built : undefined}/></Pulse>
         </group>
       </group>
     </group>;

@@ -8,6 +8,7 @@ function assembled(mode) {
   if (mode === 'hand') return step(s, { type: 'tryHand' });
   for (let i = 0; i < 6; i++) {
     s = step(s, { type: 'select', index: i });
+    for (let part = 0; part < 6; part++) s = step(s, { type: 'build' });
     while (s.rotation) s = step(s, { type: 'rotate' });
     s = step(s, { type: 'place', distance: 0 });
   }

@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Quaternion } from 'three';
-import { gameReducer as step, initialState, CUBE_SIZE, CUBE_START, TRAY, PARTS, FINGERS, HAND_PRESETS, partsFor, getPose, fitsTray, WRIST_LIMITS, NEUTRAL_WRIST, HAND_PALM_OFFSET, HAND_WRIST_PIVOT, wristQuaternion, SNAP_DISTANCE, turnsToAlign } from '../lib/game.ts';
+import { gameReducer as step, initialState, CUBE_SIZE, CUBE_START, TRAY, PARTS, FINGERS, HAND_PRESETS, partsFor, getPose, fitsTray, WRIST_LIMITS, NEUTRAL_WRIST, HAND_PALM_OFFSET, HAND_WRIST_PIVOT, wristQuaternion, SNAP_DISTANCE, turnsToAlign, buildStepsFor } from '../lib/game.ts';
 
 const joint = (s, key, value) => step(s, { type:'joint', key, value });
 const action = (s, type) => step(s, { type });
 const place = s => step(s, { type:'place', distance:0 });
-const select = (s, index) => step(s, { type:'select', index });
+// Selecting in these tests also finishes the part's own sub-assembly, which has its own tests below.
+const pick = (s, index) => step(s, { type:'select', index });
+const build = s => { while (s.selected !== null && s.built < buildStepsFor(s.robotMode, s.selected).length) s = step(s, { type:'build' }); return s; };
+const select = (s, index) => build(pick(s, index));
 function assembled() {
   let s = initialState();
   for (let i = 0; i < 6; i++) {
@@ -547,4 +550,49 @@ test('gestures and manual finger travel cannot cross the forearm from a clear wr
     assert.deepEqual(preset(clear,'grasp').fingers, HAND_PRESETS.grasp.fingers);
     assert.equal(finger(clear,'middle',90).fingers.middle,90);
   }
+});
+
+test('every component is assembled from its own parts before it can be turned or fitted', () => {
+  for (const mode of ['gripper', 'hand']) {
+    let s = initialState(mode);
+    for (let index = 0; index < 6; index++) {
+      const steps = buildStepsFor(mode, index);
+      assert.ok(steps.length >= 4, 'each component has several parts');
+      for (const part of steps) assert.ok(part.name.length > 3 && part.detail.length > 20, 'named and explained');
+      assert.equal(step(s, { type:'build' }), s, 'nothing to build before a component is chosen');
+      s = pick(s, index);
+      assert.equal(s.built, 0);
+      assert.match(s.hint, /Bagian 1 dari/);
+      const early = step(s, { type:'place', distance:0 });
+      assert.equal(early.count, index, 'cannot fit an unassembled component');
+      assert.match(early.hint, /Rakit dulu/);
+      assert.equal(step(s, { type:'rotate' }).rotation, s.rotation, 'cannot turn it yet either');
+      for (let done = 1; done <= steps.length; done++) {
+        s = step(s, { type:'build' });
+        assert.equal(s.built, done);
+        assert.equal(s.count, index);
+      }
+      assert.equal(step(s, { type:'build' }), s, 'no extra parts');
+      while (s.rotation) s = step(s, { type:'rotate' });
+      s = step(s, { type:'place', distance:0 });
+      assert.equal(s.count, index + 1);
+      assert.equal(s.built, 0);
+      assert.equal(s.selected, null);
+    }
+  }
+});
+
+test('sub-assembly progress resets with undo, restart, and changing the tool', () => {
+  let s = step(step(pick(initialState(), 0), { type:'build' }), { type:'build' });
+  assert.equal(s.built, 2);
+  assert.equal(step(s, { type:'undo' }).built, 0);
+  assert.equal(step(s, { type:'restart' }).built, 0);
+  assert.equal(pick(step(s, { type:'undo' }), 0).built, 0);
+  let tool = assembled();
+  tool = step(tool, { type:'undo' });
+  tool = step(pick(tool, 5), { type:'build' });
+  assert.equal(tool.built, 1);
+  const swapped = step(tool, { type:'robotMode', mode:'hand' });
+  assert.equal(swapped.selected, null);
+  assert.equal(swapped.built, 0);
 });

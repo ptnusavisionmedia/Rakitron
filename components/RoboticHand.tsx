@@ -22,11 +22,13 @@ type Transition = {
 };
 
 type HandViewProps = HandModelProps & {
+  /** Jumlah bagian tangan yang sudah dirakit; kosong berarti tangan utuh. */
+  stage?: number;
   wrist?: WristAngles;
   wristRef?: RefObject<Group | null>;
 };
 
-export default function RoboticHand({ angles, opposition = 0, preview = false, highlighted = false, holding = false, wrist = NEUTRAL_WRIST, wristRef }: HandViewProps) {
+export default function RoboticHand({ angles, opposition = 0, preview = false, highlighted = false, holding = false, wrist = NEUTRAL_WRIST, wristRef, stage }: HandViewProps) {
   const rig = useMemo(() => createRoboticHand({ angles: resting, preview }), [preview]);
   const invalidate = useThree(state => state.invalidate);
   const active = useRef<typeof rig | null>(null);
@@ -49,6 +51,11 @@ export default function RoboticHand({ angles, opposition = 0, preview = false, h
     rig.setHighlighted(highlighted);
     invalidate();
   }, [rig, highlighted, invalidate]);
+
+  useLayoutEffect(() => {
+    rig.setStage(stage ?? null);
+    invalidate();
+  }, [rig, stage, invalidate]);
 
   useLayoutEffect(() => {
     const pose = current.current;

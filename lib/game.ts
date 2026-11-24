@@ -51,6 +51,58 @@ export function partsFor(mode: RobotMode) {
   return mode === 'hand' ? HAND_PARTS : PARTS;
 }
 
+/** Sub-rakitan: setiap komponen dirakit dari bagian-bagiannya dulu sebelum dipasang ke robot. */
+export type BuildStep = { name: string; detail: string };
+const step = (name: string, detail: string): BuildStep => ({ name, detail });
+const BUILD_STEPS: Record<string, BuildStep[]> = {
+  base: [
+    step('Rangka alas', 'Pelat logam berat ini menahan seluruh robot supaya tidak terguling.'),
+    step('Bantalan putar', 'Cincin bantalan membuat alas bisa berputar dengan halus ke kiri dan kanan.'),
+    step('Penutup alas', 'Penutup melindungi motor dan roda gigi di dalam alas dari debu.'),
+    step('Baut dan lampu', 'Baut mengunci semua bagian, dan lampu menunjukkan robot sedang menyala.'),
+  ],
+  shoulder: [
+    step('Rangka garpu bahu', 'Dua pipi garpu menjepit lengan atas dari kiri dan kanan.'),
+    step('Poros dan bantalan', 'Poros adalah sumbu tempat lengan atas berayun naik dan turun.'),
+    step('Penutup motor', 'Di balik penutup ada motor servo yang mengangkat lengan.'),
+    step('Baut pengunci', 'Baut jingga menahan poros supaya tidak bergeser saat lengan bergerak.'),
+  ],
+  'upper-arm': [
+    step('Tulang lengan', 'Batang aluminium ini ringan tetapi kuat, seperti tulang lengan atasmu.'),
+    step('Bos poros', 'Lubang berbantalan di kedua ujung menyambung ke bahu dan siku.'),
+    step('Pelindung lengan', 'Pelat gading menutup kabel dan membuat lengan aman disentuh.'),
+    step('Kabel dan baut', 'Kabel membawa listrik dan perintah dari alas ke motor di ujung lengan.'),
+  ],
+  elbow: [
+    step('Rumah siku', 'Rumah logam ini memegang motor yang menekuk lengan bawah.'),
+    step('Poros berbentuk D', 'Sisi rata pada poros membuat lengan bawah ikut berputar, tidak selip.'),
+    step('Penutup siku', 'Penutup menjaga roda gigi tetap bersih dan terlumasi.'),
+    step('Cincin dan baut', 'Cincin jingga menandai sumbu putar siku.'),
+  ],
+  forearm: [
+    step('Tulang lengan bawah', 'Batang ini membawa alat di ujungnya ke tempat yang dituju.'),
+    step('Bos dan bantalan', 'Bos di pangkal masuk ke poros siku, bos di ujung memegang pergelangan.'),
+    step('Pelindung lengan', 'Pelat pelindung menutup rangka dan jalur kabel.'),
+    step('Kabel dan baut', 'Kabel servo diikat rapi supaya tidak terjepit saat siku menekuk.'),
+  ],
+  gripper: [
+    step('Rangka capit', 'Jembatan logam ini menjadi rel tempat kedua rahang bergeser.'),
+    step('Rel dan poros', 'Rel lurus menjaga rahang tetap sejajar saat membuka dan menutup.'),
+    step('Penutup capit', 'Penutup melindungi mekanisme penggerak rahang.'),
+    step('Rahang dan bantalan karet', 'Bantalan karet membuat benda tidak licin saat dijepit.'),
+  ],
+  hand: [
+    step('Dudukan dan motor putar', 'Dudukan menyambung ke lengan bawah, motornya memutar telapak 360°.'),
+    step('Sendi pergelangan', 'Sendi silang membuat telapak bisa menekuk dan miring seperti pergelanganmu.'),
+    step('Telapak', 'Telapak menjadi tempat semua jari menempel dan menahan benda.'),
+    step('Empat jari', 'Setiap jari punya tiga ruas yang menekuk bersama untuk melingkari benda.'),
+    step('Ibu jari', 'Ibu jari bisa berhadapan dengan jari lain, itulah yang membuat tangan bisa mencubit.'),
+  ],
+};
+export function buildStepsFor(mode: RobotMode, index: number): BuildStep[] {
+  return BUILD_STEPS[partsFor(mode)[index]?.id] ?? [];
+}
+
 export const JOINT_LIMITS: Record<Joint, { min: number; max: number; requires: number }> = {
   yaw: { min: -170, max: 170, requires: 1 },
   shoulder: { min: 0, max: 95, requires: 3 },
@@ -136,6 +188,8 @@ export type GameState = {
   opposition: number;
   count: number;
   selected: number | null;
+  /** Jumlah bagian komponen terpilih yang sudah dirakit. */
+  built: number;
   rotation: number;
   joints: Joints;
   gap: number;
@@ -148,7 +202,7 @@ export type GameState = {
 export function initialState(robotMode: RobotMode = 'gripper'): GameState {
   return {
     robotMode, fingers: { ...HAND_PRESETS.open.fingers }, wrist: { ...NEUTRAL_WRIST }, opposition: 0,
-    count: 0, selected: null, rotation: 0, joints: { ...DEFAULT_JOINTS }, gap: OPEN_GAP,
+    count: 0, selected: null, built: 0, rotation: 0, joints: { ...DEFAULT_JOINTS }, gap: OPEN_GAP,
     cube: newCube(robotMode), won: false, hint: 'Pilih alas putar dari laci komponen.', highlight: null,
   };
 }
@@ -439,9 +493,38 @@ export type Action =
   | { type: 'wrist'; key: WristAxis; value: number }
   | { type: 'turnWrist'; delta: number }
   | { type: 'tick'; dt: number }
-  | { type: 'tryHand' | 'resetWrist' | 'rotate' | 'undo' | 'open' | 'close' | 'resetCube' | 'restart' };
+  | { type: 'tryHand' | 'resetWrist' | 'rotate' | 'undo' | 'open' | 'close' | 'resetCube' | 'restart' | 'build' };
 
+function buildHint(mode: RobotMode, selected: number, built: number) {
+  const steps = buildStepsFor(mode, selected);
+  return `Bagian ${built + 1} dari ${steps.length}: pasang ${steps[built].name.toLocaleLowerCase('id')}.`;
+}
+
+/** Komponen dirakit bagian demi bagian dulu, baru boleh diputar dan dipasang ke robot. */
 export function gameReducer(state: GameState, action: Action): GameState {
+  const pending = state.selected !== null && state.built < buildStepsFor(state.robotMode, state.selected).length;
+  if (action.type === 'build') {
+    if (state.selected === null || !pending) return state;
+    const built = state.built + 1;
+    const done = built === buildStepsFor(state.robotMode, state.selected).length;
+    return { ...state, built, hint: done ? assemblyHint(state.robotMode, state.count, state.selected, state.rotation)
+      : buildHint(state.robotMode, state.selected, built) };
+  }
+  if (pending && (action.type === 'place' || action.type === 'rotate')) {
+    if (action.type === 'place' && action.partIndex !== undefined && action.partIndex !== state.selected) return state;
+    return { ...state, hint: 'Rakit dulu komponennya. ' + buildHint(state.robotMode, state.selected!, state.built) };
+  }
+  const next = reduce(state, action);
+  if (next === state) return state;
+  if (next.selected === null || next.selected !== state.selected) {
+    const built = 0;
+    const hint = next.selected !== null && buildStepsFor(next.robotMode, next.selected).length ? buildHint(next.robotMode, next.selected, 0) : next.hint;
+    return { ...next, built, hint };
+  }
+  return next;
+}
+
+function reduce(state: GameState, action: Action): GameState {
   switch (action.type) {
     case 'tryHand':
       if (state.robotMode !== 'hand' || state.count === HAND_PARTS.length) return state;
@@ -549,5 +632,6 @@ export function gameReducer(state: GameState, action: Action): GameState {
     case 'resetCube':
       return { ...state, cube: newCube(state.robotMode), won: false, gap: OPEN_GAP, fingers: { ...HAND_PRESETS.open.fingers }, opposition: 0, highlight: null, hint: assemblyHint(state.robotMode, state.count, state.selected, state.rotation) };
     case 'restart': return initialState(state.robotMode);
+    case 'build': return state;
   }
 }

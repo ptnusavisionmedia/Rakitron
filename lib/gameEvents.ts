@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { FINGERS, JOINT_LIMITS, OPEN_GAP, WRIST_LIMITS, type Joint, type Vec3, type WristAxis } from "./game";
+import { FINGERS, JOINT_LIMITS, OPEN_GAP, WRIST_LIMITS, buildStepsFor, type Joint, type Vec3, type WristAxis } from "./game";
 import type { Game } from "./useGame";
 
 /** Detik antara komponen mulai meluncur dan menumbuk soket. Animasi 3D dan bunyi memakai angka yang sama. */
@@ -10,6 +10,7 @@ export const PLACE_LAND = .26;
 export type GameEvent =
   | { type: "select"; index: number }
   | { type: "rotate" }
+  | { type: "built"; index: number; step: number; done: boolean }
   | { type: "placed"; index: number; complete: boolean; bulk: boolean }
   | { type: "complete"; bulk: boolean }
   | { type: "undo" }
@@ -69,6 +70,8 @@ export function useGameEvents(game: Game, bus: Bus) {
       bus.emit({ type: "select", index: game.selected });
     } else if (game.selected !== null && game.selected === before.selected && game.rotation !== before.rotation) {
       bus.emit({ type: "rotate" });
+    } else if (game.selected !== null && game.selected === before.selected && game.built > before.built) {
+      bus.emit({ type: "built", index: game.selected, step: game.built - 1, done: game.built === buildStepsFor(game.robotMode, game.selected).length });
     }
 
     const was = before.cube.mode, now = game.cube.mode;

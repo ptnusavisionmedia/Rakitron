@@ -31,6 +31,7 @@ export function useGame() {
     setHandPreset: (preset: HandPreset) => dispatch({ type: 'handPreset', preset }),
     select: (index: number) => dispatch({ type: 'select', index }),
     rotate: () => dispatch({ type: 'rotate' }),
+    build: () => dispatch({ type: 'build' }),
     place: (distance = 0, partIndex?: number) => dispatch({ type: 'place', distance, partIndex }),
     undo: () => dispatch({ type: 'undo' }),
     setJoint: (key: Joint, value: number) => dispatch({ type: 'joint', key, value }),

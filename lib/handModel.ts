@@ -282,6 +282,17 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
   }
   originals.forEach(g => g.dispose());
 
+  // Tahap sub-rakitan tiap bagian: dudukan, sendi pergelangan, telapak, empat jari, ibu jari.
+  const stageOf = (name: string) => /^Wrist(Mount|Cuff|Rotor)$/.test(name) ? 0 : /^Wrist(Gimbal|Articulation)$/.test(name) ? 1
+    : name === "PalmBody" ? 2 : /^(Index|Middle|Ring|Little)$/.test(name) ? 3 : name === "Thumb" ? 4 : null;
+  const staged = new Map<THREE.Mesh,{ stage: number; material: THREE.Material }>();
+  group.traverse(o => {
+    if (!(o instanceof THREE.Mesh)) return;
+    let stage: number | null = null;
+    for (let parent = o.parent; parent && stage === null; parent = parent.parent) stage = stageOf(parent.name);
+    staged.set(o,{ stage: stage ?? 0, material: o.material as THREE.Material });
+  });
+
   const yawAxis = new THREE.Vector3(0,1,0);
   const outwardAxis = new THREE.Vector3(0,0,1);
   const cmcOrientation = new THREE.Quaternion(), turn = new THREE.Quaternion();
@@ -371,6 +382,10 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
       rollPivot.rotation.y = roll*DEG;
       deviationPivot.rotation.z = deviation*DEG;
       wristPivot.rotation.x = -pitch*DEG;
+    },
+    /** Sub-rakitan: bagian dengan tahap >= `count` tampil sebagai bayangan. `null` menampilkan semuanya. */
+    setStage(count: number | null) {
+      for (const [shell, entry] of staged) shell.material = count === null || entry.stage < count ? entry.material : ghost;
     },
     setHighlighted(enabled: boolean) {
       for (const material of Object.values(palette)) {

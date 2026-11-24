@@ -11,14 +11,18 @@ type Pose = { joints?: Partial<Joints>; wrist?: Partial<WristAngles>; fingers?: 
 export type MotionStep =
   | ({ kind: 'move'; seconds: number; sound?: MotionSound; label?: string } & Pose)
   | { kind: 'do'; action: Action; seconds: number; sound?: MotionSound; label?: string }
-  | { kind: 'settle'; seconds: number; label?: string };
+  | { kind: 'settle'; seconds: number; label?: string }
+  | { kind: 'wait'; seconds: number; label?: string };
 export type Motion = { id: string; mode: RobotMode; name: string; detail: string; steps: MotionStep[] };
 
 const move = (seconds: number, pose: Pose, extra: { sound?: MotionSound; label?: string } = {}): MotionStep =>
   ({ kind: 'move', seconds, ...pose, ...extra });
 const act = (action: Action, seconds: number, extra: { sound?: MotionSound; label?: string } = {}): MotionStep =>
   ({ kind: 'do', action, seconds, ...extra });
+const pause = (seconds: number, label?: string): MotionStep => ({ kind: 'wait', seconds, label });
 const OPEN_HAND = { ...HAND_PRESETS.open.fingers };
+// Jari melengkung mengelilingi kubus tanpa menyentuhnya, tepat sebelum menggenggam.
+const PRE_GRASP: FingerAngles = { thumb: 44, index: 46, middle: 50, ring: 52, little: 54 };
 const FIST: FingerAngles = { thumb: 78, index: 86, middle: 88, ring: 88, little: 90 };
 
 const gripperHome = (seconds = 1.4): MotionStep => move(seconds, { joints: { ...DEFAULT_JOINTS } }, { label: 'Kembali ke posisi siaga' });
@@ -165,47 +169,65 @@ const HAND_MOTIONS: Motion[] = [
   },
 ];
 
-/** Ambil kubus dari posisi awal dan taruh di baki, seperti sel robot pick-and-place. */
+/**
+ * Ambil kubus dari posisi awal dan taruh di baki, seperti sel robot pick-and-place.
+ * Geraknya pelan dan bertahap: berhenti di atas benda, turun perlahan, menjepit, lalu mengangkat.
+ */
 const PICK_AND_PLACE: Record<RobotMode, Motion> = {
   gripper: {
     id: 'gripper-pick-place', mode: 'gripper', name: 'Ambil dan taruh otomatis',
-    detail: 'Robot mengambil kubus kuning dan menaruhnya di baki biru sendiri.',
+    detail: 'Robot mengambil kubus kuning pelan-pelan dan menaruhnya di baki biru sendiri.',
     steps: [
-      act({ type: 'open' }, .3, { label: 'Membuka capit' }),
-      act({ type: 'resetCube' }, .4, { label: 'Menyiapkan kubus' }),
-      move(.8, { joints: { shoulder: 55, elbow: -95 } }, { label: 'Naik ke ketinggian aman' }),
-      move(1.2, { joints: { yaw: -135 } }, { label: 'Berputar ke kubus' }),
-      move(.4, { joints: { elbow: -90 } }),
-      move(1.1, { joints: { shoulder: 30 } }, { label: 'Turun ke kubus' }),
-      act({ type: 'close' }, .55, { label: 'Menjepit kubus' }),
-      move(1, { joints: { shoulder: 55 } }, { label: 'Mengangkat kubus' }),
-      move(1.8, { joints: { yaw: -45 } }, { label: 'Berputar ke baki' }),
-      move(.7, { joints: { shoulder: 42 } }, { label: 'Turun di atas baki' }),
-      act({ type: 'open' }, .3, { label: 'Melepas kubus' }),
+      act({ type: 'open' }, .6, { label: 'Membuka capit' }),
+      act({ type: 'resetCube' }, .6, { label: 'Menyiapkan kubus' }),
+      move(1.3, { joints: { shoulder: 55, elbow: -95 } }, { label: 'Naik ke ketinggian aman' }),
+      move(2.6, { joints: { yaw: -135 } }, { label: 'Berputar ke arah kubus' }),
+      move(.9, { joints: { elbow: -90 } }, { label: 'Meluruskan capit di atas kubus' }),
+      move(1.6, { joints: { shoulder: 39 } }, { label: 'Mendekat ke kubus' }),
+      pause(.45, 'Berhenti di atas kubus'),
+      move(1.7, { joints: { shoulder: 30 } }, { label: 'Turun perlahan' }),
+      pause(.35),
+      act({ type: 'close' }, 1.1, { label: 'Menjepit kubus' }),
+      move(1.5, { joints: { shoulder: 40 } }, { label: 'Mengangkat perlahan' }),
+      move(1.3, { joints: { shoulder: 55 } }, { label: 'Naik ke ketinggian aman' }),
+      pause(.25),
+      move(3.4, { joints: { yaw: -45 } }, { label: 'Berputar ke arah baki' }),
+      pause(.3, 'Berhenti di atas baki'),
+      move(1.7, { joints: { shoulder: 42 } }, { label: 'Turun di atas baki' }),
+      pause(.45),
+      act({ type: 'open' }, .7, { label: 'Melepas kubus' }),
       { kind: 'settle', seconds: 2.5, label: 'Kubus mendarat' },
-      move(.6, { joints: { shoulder: 55 } }),
-      gripperHome(),
+      move(1.3, { joints: { shoulder: 55 } }, { label: 'Naik kembali' }),
+      gripperHome(2.4),
     ],
   },
   hand: {
     id: 'hand-pick-place', mode: 'hand', name: 'Ambil dan taruh otomatis',
-    detail: 'Tangan menggenggam kubus kuning dan menaruhnya di baki biru sendiri.',
+    detail: 'Tangan menggenggam kubus kuning pelan-pelan dan menaruhnya di baki biru sendiri.',
     steps: [
-      act({ type: 'handPreset', preset: 'open' }, .4, { label: 'Membuka tangan' }),
-      act({ type: 'resetWrist' }, .3),
-      act({ type: 'resetCube' }, .4, { label: 'Menyiapkan kubus' }),
-      move(.8, { joints: { shoulder: 55, elbow: -95 } }, { label: 'Naik ke ketinggian aman' }),
-      move(1.2, { joints: { yaw: -130 } }, { label: 'Berputar ke kubus' }),
-      move(.4, { joints: { elbow: -92 } }),
-      move(1.1, { joints: { shoulder: 38 } }, { label: 'Turun ke kubus' }),
-      act({ type: 'handPreset', preset: 'grasp' }, .8, { label: 'Menggenggam kubus' }),
-      move(1, { joints: { shoulder: 55 } }, { label: 'Mengangkat kubus' }),
-      move(1.8, { joints: { yaw: -45 } }, { label: 'Berputar ke baki' }),
-      move(.7, { joints: { shoulder: 46 } }, { label: 'Turun di atas baki' }),
-      act({ type: 'handPreset', preset: 'open' }, .4, { label: 'Melepas kubus' }),
+      move(.9, { fingers: OPEN_HAND, opposition: 0 }, { label: 'Membuka tangan' }),
+      act({ type: 'resetWrist' }, .4, { label: 'Meluruskan pergelangan' }),
+      act({ type: 'resetCube' }, .6, { label: 'Menyiapkan kubus' }),
+      move(1.3, { joints: { shoulder: 55, elbow: -95 } }, { label: 'Naik ke ketinggian aman' }),
+      move(2.6, { joints: { yaw: -130 } }, { label: 'Berputar ke arah kubus' }),
+      move(.9, { joints: { elbow: -92 } }, { label: 'Meluruskan telapak di atas kubus' }),
+      move(1.6, { joints: { shoulder: 46 } }, { label: 'Mendekat ke kubus' }),
+      pause(.45, 'Berhenti di atas kubus'),
+      move(1.7, { joints: { shoulder: 38 } }, { label: 'Turun perlahan' }),
+      move(1.2, { fingers: PRE_GRASP, opposition: 44 }, { label: 'Jari melingkari kubus' }),
+      move(.9, { fingers: { ...HAND_PRESETS.grasp.fingers }, opposition: HAND_PRESETS.grasp.opposition }, { label: 'Menggenggam kubus' }),
+      pause(.5),
+      move(1.5, { joints: { shoulder: 46 } }, { label: 'Mengangkat perlahan' }),
+      move(1.3, { joints: { shoulder: 55 } }, { label: 'Naik ke ketinggian aman' }),
+      pause(.25),
+      move(3.4, { joints: { yaw: -45 } }, { label: 'Berputar ke arah baki' }),
+      pause(.3, 'Berhenti di atas baki'),
+      move(1.7, { joints: { shoulder: 46 } }, { label: 'Turun di atas baki' }),
+      pause(.45),
+      move(1.1, { fingers: OPEN_HAND, opposition: 0 }, { label: 'Membuka jari, melepas kubus' }),
       { kind: 'settle', seconds: 2.5, label: 'Kubus mendarat' },
-      move(.6, { joints: { shoulder: 55 } }),
-      ...handHome(),
+      move(1.3, { joints: { shoulder: 55 } }, { label: 'Naik kembali' }),
+      ...handHome(2.4),
     ],
   },
 };
@@ -242,7 +264,7 @@ export function advancePlayback(playback: Playback, state: GameState, dt: number
   let from = playback.from;
   if (!from) {
     if (playback.index === 0) sounds.push('motionStart');
-    if (step.kind !== 'settle' && step.sound) sounds.push(step.sound);
+    if ((step.kind === 'move' || step.kind === 'do') && step.sound) sounds.push(step.sound);
     if (step.kind === 'do') actions.push(step.action);
     from = step.kind === 'move' ? capture(step, state) : {};
   }
