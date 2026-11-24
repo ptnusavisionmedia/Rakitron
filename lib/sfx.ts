@@ -1,5 +1,5 @@
-// Efek suara dan musik latar bernuansa robot, disintesis langsung dengan Web Audio tanpa berkas audio:
-// bunyi servo, bip digital, nada FM logam, dan denting besi.
+// Efek suara dan musik latar bergaya fiksi ilmiah, disintesis langsung dengan Web Audio tanpa berkas audio:
+// hidrolik servo, desis pneumatik, kunci magnet, ping antarmuka holografik, dan suara robot.
 // Konteks audio baru dibuat setelah anak menyentuh layar, sesuai aturan autoplay browser.
 
 type Audio = { ctx: AudioContext; out: GainNode; music: GainNode; noise: AudioBuffer };
@@ -32,6 +32,11 @@ function ensure(): Audio | null {
     out.gain.value = .9;
     music.gain.value = .0;
     out.connect(compressor); music.connect(compressor); compressor.connect(ctx.destination);
+    // Gema pendek yang redup memberi ruang seperti bengkel logam futuristik.
+    const send = ctx.createGain(), delay = ctx.createDelay(.5), feedback = ctx.createGain(), damp = ctx.createBiquadFilter();
+    send.gain.value = .22; delay.delayTime.value = .13; feedback.gain.value = .34;
+    damp.type = "lowpass"; damp.frequency.value = 3200;
+    out.connect(send); send.connect(delay); delay.connect(damp); damp.connect(feedback); feedback.connect(delay); damp.connect(compressor);
     const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const data = noise.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
@@ -83,39 +88,35 @@ function hiss(a: Audio, v: Hiss) {
   src.start(start, Math.random() * .5); src.stop(start + v.dur + .03);
 }
 
-// Nada logam: pembawa dengan modulator FM berfrekuensi tak harmonis sehingga terdengar seperti besi.
-type Metal = { from: number; to?: number; dur: number; vol: number; at?: number; ratio?: number; depth?: number };
-function metal(a: Audio, v: Metal) {
+// Ping antarmuka holografik: sinus bersih dengan harmonik tinggi redup.
+function ping(a: Audio, freq: number, at: number, vol: number, dur = .22) {
+  tone(a, { from: freq, to: freq * 1.012, dur, vol, at, attack: .002 });
+  tone(a, { from: freq * 2, dur: dur * .5, vol: vol * .3, at, attack: .002 });
+  tone(a, { from: freq * 3.01, dur: dur * .25, vol: vol * .12, at, attack: .002 });
+}
+
+// Gigi gergaji dengan penyaring beresonansi yang menyapu: bunyi daya menyala atau hidrolik.
+type Sweep = { type?: OscillatorType; from: number; to: number; dur: number; vol: number; at?: number; fFrom: number; fTo: number; q?: number };
+function sweep(a: Audio, v: Sweep) {
   const { ctx } = a;
   const start = ctx.currentTime + shift + (v.at ?? 0);
-  const carrier = ctx.createOscillator();
-  const mod = ctx.createOscillator();
-  const depth = ctx.createGain();
+  const osc = ctx.createOscillator();
+  const sub = ctx.createOscillator();
+  const filter = ctx.createBiquadFilter();
   const gain = ctx.createGain();
-  carrier.type = "sine"; mod.type = "sine";
-  carrier.frequency.setValueAtTime(v.from, start);
-  if (v.to) carrier.frequency.exponentialRampToValueAtTime(v.to, start + v.dur);
-  mod.frequency.value = v.from * (v.ratio ?? 2.76);
-  depth.gain.setValueAtTime(v.from * (v.depth ?? 1.6), start);
-  depth.gain.exponentialRampToValueAtTime(1, start + v.dur);
+  osc.type = v.type ?? "sawtooth"; sub.type = "square";
+  osc.frequency.setValueAtTime(v.from, start); osc.frequency.exponentialRampToValueAtTime(v.to, start + v.dur);
+  sub.frequency.setValueAtTime(v.from / 2, start); sub.frequency.exponentialRampToValueAtTime(v.to / 2, start + v.dur);
+  filter.type = "lowpass"; filter.Q.value = v.q ?? 8;
+  filter.frequency.setValueAtTime(v.fFrom, start); filter.frequency.exponentialRampToValueAtTime(v.fTo, start + v.dur);
   gain.gain.setValueAtTime(.0001, start);
-  gain.gain.exponentialRampToValueAtTime(v.vol, start + .003);
+  gain.gain.exponentialRampToValueAtTime(v.vol, start + Math.min(.05, v.dur / 3));
   gain.gain.exponentialRampToValueAtTime(.0001, start + v.dur);
-  mod.connect(depth); depth.connect(carrier.frequency);
-  carrier.connect(gain); gain.connect(a.out);
-  carrier.start(start); mod.start(start);
-  carrier.stop(start + v.dur + .03); mod.stop(start + v.dur + .03);
+  osc.connect(filter); sub.connect(filter); filter.connect(gain); gain.connect(a.out);
+  osc.start(start); sub.start(start); osc.stop(start + v.dur + .03); sub.stop(start + v.dur + .03);
 }
 
-// Rangkaian bip digital cepat berbentuk gelombang kotak, seperti bunyi komputer robot.
-function blips(a: Audio, freqs: number[], gap: number, dur: number, vol: number, at = 0) {
-  freqs.forEach((f, i) => tone(a, {
-    type: "square", from: f, dur, vol, at: at + i * gap, attack: .002,
-    filter: { type: "lowpass", freq: Math.min(5200, f * 3.2), q: 2 },
-  }));
-}
-
-// Desis motor servo: gigi gergaji bergetar halus dengan penyaring yang mengikuti nada.
+// Desis servo hidrolik: gigi gergaji bergetar halus dengan penyaring yang mengikuti nada.
 function whine(a: Audio, from: number, to: number, dur: number, vol: number, at = 0) {
   const { ctx } = a;
   const start = ctx.currentTime + shift + at;
@@ -127,10 +128,10 @@ function whine(a: Audio, from: number, to: number, dur: number, vol: number, at 
   osc.type = "sawtooth";
   osc.frequency.setValueAtTime(from, start);
   osc.frequency.exponentialRampToValueAtTime(to, start + dur);
-  lfo.frequency.value = 38; lfoGain.gain.value = from * .035;
-  filter.type = "bandpass"; filter.Q.value = 5;
-  filter.frequency.setValueAtTime(from * 2.4, start);
-  filter.frequency.exponentialRampToValueAtTime(to * 2.4, start + dur);
+  lfo.frequency.value = 46; lfoGain.gain.value = from * .04;
+  filter.type = "bandpass"; filter.Q.value = 6;
+  filter.frequency.setValueAtTime(from * 2.6, start);
+  filter.frequency.exponentialRampToValueAtTime(to * 2.6, start + dur);
   gain.gain.setValueAtTime(.0001, start);
   gain.gain.exponentialRampToValueAtTime(vol, start + Math.min(.02, dur / 3));
   gain.gain.exponentialRampToValueAtTime(.0001, start + dur);
@@ -140,88 +141,143 @@ function whine(a: Audio, from: number, to: number, dur: number, vol: number, at 
   osc.stop(start + dur + .03); lfo.stop(start + dur + .03);
 }
 
-// Denting logam: pecahan nada tak harmonis yang cepat meredam, ditambah klik derau.
-function clank(a: Audio, base: number, vol: number, at = 0, dur = .28) {
+// Desis pneumatik: semburan udara bertekanan yang cepat melemah.
+function psst(a: Audio, at: number, vol: number, dur = .22) {
+  hiss(a, { dur, vol, at, type: "highpass", from: 5200, q: .7 });
+  hiss(a, { dur: dur * .8, vol: vol * .5, at, type: "bandpass", from: 3200, to: 1400, q: 1.2 });
+}
+
+// Kunci mekanis: hentakan magnet rendah, klik logam, dan denting pegas.
+function latch(a: Audio, at: number, vol: number) {
+  tone(a, { from: 130, to: 44, dur: .16, vol: vol * 1.5, at, attack: .002 });
   [1, 2.76, 5.4, 8.93].forEach((ratio, i) => tone(a, {
-    from: base * ratio, dur: dur / (1 + i * .7), vol: vol / (1 + i * 1.3), at, attack: .001,
+    from: 420 * ratio, dur: .24 / (1 + i * .7), vol: vol * .7 / (1 + i * 1.3), at: at + .012, attack: .001,
   }));
-  hiss(a, { dur: .03, vol: vol * .9, at, type: "highpass", from: 3000 });
+  hiss(a, { dur: .025, vol: vol * .9, at, type: "highpass", from: 3400 });
+}
+
+// Suara robot: gigi gergaji berpitch datar melewati dua formant yang bergerak, seperti vokoder.
+function voice(a: Audio, syllables: { pitch: number; f1: number; f2: number; dur: number }[], at = 0, vol = .1) {
+  const { ctx } = a;
+  let t = at;
+  for (const s of syllables) {
+    const start = ctx.currentTime + shift + t;
+    const osc = ctx.createOscillator();
+    const f1 = ctx.createBiquadFilter(), f2 = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(s.pitch, start);
+    osc.frequency.linearRampToValueAtTime(s.pitch * .94, start + s.dur);
+    f1.type = "bandpass"; f1.Q.value = 7; f1.frequency.setValueAtTime(s.f1, start);
+    f2.type = "bandpass"; f2.Q.value = 9; f2.frequency.setValueAtTime(s.f2, start);
+    f2.frequency.linearRampToValueAtTime(s.f2 * 1.25, start + s.dur);
+    gain.gain.setValueAtTime(.0001, start);
+    gain.gain.exponentialRampToValueAtTime(vol, start + .012);
+    gain.gain.exponentialRampToValueAtTime(.0001, start + s.dur);
+    osc.connect(f1); osc.connect(f2); f1.connect(gain); f2.connect(gain); gain.connect(a.out);
+    osc.start(start); osc.stop(start + s.dur + .03);
+    t += s.dur * .85;
+  }
 }
 
 const sounds: Record<SfxName, (a: Audio, o: PlayOptions) => void> = {
   select(a) {
-    blips(a, [880, 1320], .05, .06, .1);
-    whine(a, 260, 420, .1, .06);
+    ping(a, 1568, 0, .1, .14);
+    ping(a, 2349, .06, .08, .16);
+    sweep(a, { from: 120, to: 260, dur: .1, vol: .05, fFrom: 500, fTo: 1400 });
   },
   rotate(a) {
-    whine(a, 180, 260, .08, .08);
-    clank(a, 520, .1, .07, .12);
-    whine(a, 200, 150, .07, .06, .1);
+    // Roda gigi berputar seperempat putaran: tiga klik cepat dengan desis servo.
+    whine(a, 210, 330, .14, .06);
+    [0, .045, .09].forEach((t, i) => {
+      hiss(a, { dur: .02, vol: .22, at: t, type: "highpass", from: 3800 });
+      tone(a, { type: "square", from: 260 + i * 60, dur: .025, vol: .05, at: t, attack: .001 });
+    });
+    psst(a, .12, .04, .1);
   },
   whoosh(a) {
-    whine(a, 140, 520, .26, .09);
-    hiss(a, { dur: .26, vol: .08, type: "bandpass", from: 500, to: 2600, q: 3 });
+    sweep(a, { from: 70, to: 330, dur: .27, vol: .13, fFrom: 220, fTo: 2800, q: 6 });
+    whine(a, 380, 900, .25, .05);
+    psst(a, 0, .05, .27);
   },
   snap(a) {
-    clank(a, 330, .3, 0, .32);
-    tone(a, { from: 110, to: 45, dur: .16, vol: .5, attack: .002 });
-    blips(a, [1760, 2349], .06, .05, .06, .08);
+    latch(a, 0, .4);
+    psst(a, .05, .09, .26);
+    ping(a, 1760, .1, .08, .16);
+    ping(a, 2637, .17, .07, .22);
   },
   note(a, o) {
-    // Setiap komponen yang terpasang menambah satu bip nada naik, seperti konfirmasi komputer.
+    // Tiap komponen yang terpasang menyalakan satu modul: ping naik nada dengan dengung daya.
     const f = SCALE[Math.min(SCALE.length - 1, Math.max(0, o.step ?? 0))];
-    blips(a, [f, f * 1.5], .07, .08, .1);
-    metal(a, { from: f * 2, dur: .35, vol: .05, at: .02, ratio: 3.5, depth: .8 });
+    ping(a, f * 2, 0, .1, .26);
+    ping(a, f * 3, .075, .07, .3);
+    sweep(a, { from: f / 2, to: f, dur: .2, vol: .05, at: .02, fFrom: 400, fTo: 2200, q: 5 });
   },
   fanfare(a) {
-    blips(a, [523.25, 659.25, 783.99, 1046.5, 1318.5], .075, .1, .12);
-    [1046.5, 1568].forEach((f, i) => metal(a, { from: f, dur: 1, vol: .09, at: .42 + i * .04, ratio: 1.5, depth: .5 }));
-    blips(a, [2093, 1568, 2093, 2637], .05, .05, .05, .55);
+    // Seluruh sistem menyala: dengung daya naik, akord ping berlapis, lalu sapuan bunga api digital.
+    sweep(a, { from: 60, to: 520, dur: .55, vol: .17, fFrom: 180, fTo: 5200, q: 7 });
+    latch(a, .5, .28);
+    [523.25, 783.99, 1046.5, 1568].forEach((f, i) => ping(a, f * 2, .52 + i * .035, .09, 1.1));
+    [2093, 2637, 3136, 3951, 4699].forEach((f, i) => ping(a, f, .72 + i * .06, .045, .35));
+    psst(a, .5, .08, .5);
   },
   undo(a) {
-    blips(a, [740, 520], .05, .06, .09);
-    whine(a, 420, 160, .14, .07);
+    sweep(a, { from: 520, to: 90, dur: .2, vol: .1, fFrom: 3200, fTo: 260, q: 6 });
+    ping(a, 1175, 0, .07, .12);
+    ping(a, 784, .07, .07, .15);
+    psst(a, .1, .05, .12);
   },
   servo(a, o) {
     const v = Math.min(1, Math.max(0, o.amount ?? .5));
-    const f = 170 + v * 300;
-    whine(a, f, f * 1.1, .1, .08);
-    tone(a, { type: "square", from: f * 4, dur: .02, vol: .015, at: .05 });
+    const f = 190 + v * 330;
+    whine(a, f, f * 1.12, .1, .07);
+    tone(a, { type: "square", from: f * 5, dur: .02, vol: .012, at: .05 });
+    hiss(a, { dur: .02, vol: .04, at: .07, type: "highpass", from: 5000 });
   },
   grab(a) {
-    whine(a, 240, 420, .08, .08);
-    clank(a, 410, .28, .07, .22);
-    tone(a, { from: 140, to: 60, dur: .12, vol: .3, at: .07 });
-    blips(a, [1568, 2093], .05, .05, .07, .14);
+    whine(a, 230, 520, .1, .09);
+    latch(a, .09, .36);
+    psst(a, .12, .08, .22);
+    ping(a, 2093, .2, .06, .16);
   },
   release(a) {
-    whine(a, 380, 200, .12, .08);
-    clank(a, 300, .16, .08, .16);
-    blips(a, [1175, 880], .05, .05, .06, .12);
+    psst(a, 0, .11, .24);
+    whine(a, 520, 220, .14, .07, .03);
+    tone(a, { from: 180, to: 90, dur: .09, vol: .16, at: .1, attack: .002 });
+    ping(a, 1319, .14, .05, .14);
   },
   land(a) {
-    tone(a, { from: 120, to: 42, dur: .26, vol: .6 });
-    clank(a, 200, .22, .005, .22);
-    hiss(a, { dur: .1, vol: .22, type: "lowpass", from: 600 });
+    tone(a, { from: 110, to: 38, dur: .3, vol: .6 });
+    latch(a, .01, .24);
+    hiss(a, { dur: .14, vol: .22, type: "lowpass", from: 700 });
   },
   win(a) {
-    blips(a, [392, 523.25, 659.25, 783.99, 1046.5, 1318.5], .08, .1, .13);
-    [783.99, 1046.5, 1318.5].forEach((f, i) => metal(a, { from: f, dur: 1.2, vol: .1, at: .55 + i * .05, ratio: 1.5, depth: .5 }));
-    blips(a, [2093, 2637, 3136, 2637, 3136, 4186], .055, .05, .045, .6);
-    whine(a, 200, 900, .5, .05, .1);
+    sweep(a, { from: 55, to: 660, dur: .7, vol: .17, fFrom: 160, fTo: 6000, q: 7 });
+    latch(a, .66, .3);
+    [392, 587.33, 783.99, 1174.7, 1568].forEach((f, i) => ping(a, f * 2, .68 + i * .04, .09, 1.5));
+    voice(a, [
+      { pitch: 118, f1: 420, f2: 1900, dur: .13 },
+      { pitch: 134, f1: 700, f2: 1200, dur: .13 },
+      { pitch: 158, f1: 300, f2: 2300, dur: .22 },
+    ], .8, .16);
+    [3136, 3951, 4699, 3951, 4699, 6272].forEach((f, i) => ping(a, f, 1 + i * .06, .04, .3));
+    psst(a, .66, .09, .6);
   },
-  magnet(a) { blips(a, [1100, 1650], .03, .035, .08); },
+  magnet(a) {
+    tone(a, { from: 1800, to: 3400, dur: .06, vol: .08 });
+    hiss(a, { dur: .05, vol: .09, type: "bandpass", from: 4200, q: 4 });
+  },
 };
 
-// Lagu latar elektronik: akord C - Am - F - G dengan bas gigi gergaji, arpeggio kotak, dan hi-hat digital.
+// Lagu latar fiksi ilmiah: bantalan synth gigi gergaji, bas berdenyut, dan arpeggio ping digital.
 const CHORDS = [
-  { bass: 48, notes: [60, 64, 67, 72] },
   { bass: 45, notes: [57, 60, 64, 69] },
   { bass: 41, notes: [53, 57, 60, 65] },
+  { bass: 48, notes: [60, 64, 67, 72] },
   { bass: 43, notes: [55, 59, 62, 67] },
 ];
-const ARP = [0, 1, 2, 3, 2, 1, 2, 3];
-const STEP = 60 / 108 / 2;
+const ARP = [0, 2, 1, 3, 2, 1, 3, 2];
+const STEP = 60 / 100 / 2;
 let nextStep = 0;
 let stepIndex = 0;
 
@@ -235,10 +291,19 @@ function scheduleMusic() {
     const chord = CHORDS[bar];
     const at = nextStep - a.ctx.currentTime;
     const lift = Math.floor(stepIndex / 32) % 2 === 1 ? 12 : 0;
-    if (beat % 4 === 0) tone(a, { type: "sawtooth", from: midi(chord.bass), dur: STEP * 3.2, vol: .3, at, dest: a.music, filter: { type: "lowpass", freq: 420, q: 3 } });
-    tone(a, { type: "square", from: midi(chord.notes[ARP[beat]] + lift), dur: STEP * 1.3, vol: .1, at, attack: .004, dest: a.music, filter: { type: "lowpass", freq: 1700, q: 2 } });
-    if (beat % 2 === 1) hiss(a, { dur: .025, vol: .06, at, type: "highpass", from: 8000 });
-    if (beat === 4) tone(a, { from: 150, to: 55, dur: .11, vol: .35, at, attack: .002, dest: a.music });
+    if (beat === 0) {
+      // Bantalan akord dua gigi gergaji yang sedikit menyimpang nada agar terdengar lebar.
+      for (const note of chord.notes.slice(0, 3)) {
+        for (const detune of [-.4, .4]) {
+          tone(a, { type: "sawtooth", from: midi(note) * (1 + detune * .01), dur: STEP * 7.6, vol: .035, at, attack: .5, dest: a.music, filter: { type: "lowpass", freq: 900, q: 1 } });
+        }
+      }
+    }
+    if (beat % 2 === 0) tone(a, { type: "sawtooth", from: midi(chord.bass), dur: STEP * 1.4, vol: .3, at, dest: a.music, filter: { type: "lowpass", freq: 380, q: 5 } });
+    tone(a, { type: "sine", from: midi(chord.notes[ARP[beat]] + 12 + lift), dur: STEP * 1.6, vol: .14, at, attack: .003, dest: a.music });
+    tone(a, { type: "sine", from: midi(chord.notes[ARP[beat]] + 24 + lift), dur: STEP * .6, vol: .04, at, attack: .003, dest: a.music });
+    if (beat % 2 === 1) hiss(a, { dur: .02, vol: .05, at, type: "highpass", from: 9000 });
+    if (beat === 4) tone(a, { from: 140, to: 48, dur: .12, vol: .3, at, attack: .002, dest: a.music });
     nextStep += STEP;
     stepIndex++;
   }
