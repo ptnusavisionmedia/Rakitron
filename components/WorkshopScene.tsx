@@ -10,7 +10,9 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { Game } from "../lib/useGame";
 import { SNAP_DISTANCE, TRAY, wristQuaternion } from "../lib/game";
+import { PLACE_LAND, createBus, type Bus } from "../lib/gameEvents";
 import RoboticHand from "./RoboticHand";
+import { Effects, prefersReducedMotion, useFx } from "./Effects";
 import WorkshopTable from "./WorkshopTable";
 import { ReceiverTray, Ring, WoodenCube } from "./SceneObjects";
 
@@ -23,6 +25,7 @@ export type WorkshopSceneProps = {
   cameraReset?: number;
   socketFocus?: number;
   zoom?: number;
+  bus?: Bus;
   onReady?: () => void;
 };
 type Pointer = ThreeEvent<PointerEvent>;
@@ -248,48 +251,108 @@ function PartModel({ index, source, game, style, attached = false, wristRef }: {
   return <Model source={source} style={style} gap={index === 5 ? game.gap : undefined} />;
 }
 
+const SETTLE = .8;
+// Komponen meluncur ke soket, menumbuk (bunyi "klik" dan percikan), lalu bergetar sebentar.
 function SeatedPart({ children, index, forearmAngle }: { children:ReactNode; index:number; forearmAngle:number }) {
   const ref = useRef<THREE.Group>(null);
   const elapsed = useRef(0);
+  const landed = useRef(false);
+  const fx = useFx();
+  const world = useMemo(() => new THREE.Vector3(),[]);
   const invalidate = useThree(s => s.invalidate);
-  const reduced = useRef(false);
   useLayoutEffect(() => {
-    reduced.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  },[]);
+    if (prefersReducedMotion()) { elapsed.current = SETTLE; landed.current = true; }
+    else invalidate();
+  },[invalidate]);
   useFrame((_,dt) => {
-    if (!ref.current || elapsed.current >= .22) return;
-    elapsed.current = Math.min(.22,elapsed.current + Math.min(dt,.04));
-    const remaining = reduced.current ? 0 : Math.pow(1-elapsed.current/.22,2);
-    ref.current.position.copy(insertionAxis(index,forearmAngle)).multiplyScalar(remaining*.19);
-    if (remaining > 0) invalidate();
+    const group = ref.current;
+    if (!group || elapsed.current >= SETTLE) return;
+    elapsed.current = Math.min(SETTLE,elapsed.current + Math.min(dt,.04));
+    const t = elapsed.current;
+    const approach = Math.min(1,t / PLACE_LAND);
+    group.position.copy(insertionAxis(index,forearmAngle)).multiplyScalar(.62 * (1 - approach * approach));
+    const after = Math.max(0,t - PLACE_LAND);
+    const scale = t < PLACE_LAND ? 1 + .07 * (1 - approach) : 1 + .12 * Math.exp(-9 * after) * Math.cos(26 * after);
+    group.scale.setScalar(t >= SETTLE ? 1 : scale);
+    if (t >= PLACE_LAND && !landed.current) {
+      landed.current = true;
+      group.getWorldPosition(world);
+      fx?.burst("pop",world);
+      if (index === 5) { fx?.burst("sparkle",world,.05); fx?.burst("confetti",world,.3); }
+    }
+    invalidate();
   });
   return <group ref={ref}>{children}</group>;
 }
-function Locator({ active, onClick }: { active: boolean; onClick: (e:ThreeEvent<MouseEvent>)=>void }) {
+function Locator({ active, onClick, index, forearmAngle }: { active: boolean; onClick: (e:ThreeEvent<MouseEvent>)=>void; index:number; forearmAngle:number }) {
   const marker = useRef<THREE.Group>(null);
+  const arrow = useRef<THREE.Group>(null);
   const pulse = useRef(0);
+  const clock = useRef(0);
   const invalidate = useThree(s => s.invalidate);
+  const axis = useMemo(() => insertionAxis(index,forearmAngle),[index,forearmAngle]);
+  const aim = useMemo(() => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),axis.clone().negate()),[axis]);
   useLayoutEffect(() => {
-    pulse.current = active && !window.matchMedia("(prefers-reduced-motion: reduce)").matches ? .58 : 0;
+    pulse.current = active && !prefersReducedMotion() ? .58 : 0;
     marker.current?.scale.setScalar(1);
     invalidate();
   },[active,invalidate]);
+  // Cincin bernapas dan panah memantul agar anak tahu ke mana komponen harus dibawa.
   useFrame((_,dt) => {
-    if (!marker.current || pulse.current <= 0) return;
-    pulse.current = Math.max(0,pulse.current-Math.min(dt,.04));
-    marker.current.scale.setScalar(1 + Math.sin(Math.PI*pulse.current/.58)*.12);
-    if (pulse.current>0) invalidate();
+    if (prefersReducedMotion()) return;
+    const step = Math.min(dt,.04);
+    clock.current += step;
+    pulse.current = Math.max(0,pulse.current - step);
+    if (marker.current) {
+      const press = pulse.current > 0 ? Math.sin(Math.PI*pulse.current/.58)*.12 : 0;
+      marker.current.scale.setScalar(1 + press + Math.sin(clock.current*3.2)*.045);
+    }
+    arrow.current?.position.copy(axis).multiplyScalar(.5 + (Math.sin(clock.current*5)+1)*.05);
+    invalidate();
   });
   return <group onClick={onClick} userData={{ assemblySocket: true }}>
     <group ref={marker}>
       {[0, Math.PI/2].map(tilt => <mesh key={tilt} rotation-x={tilt} renderOrder={2}>
         <torusGeometry args={[.185,.008,5,40]} />
-        <meshBasicMaterial color={active ? "#188665" : "#a26c37"} transparent opacity={.78} depthTest={false} depthWrite={false} />
+        <meshBasicMaterial color={active ? "#188665" : "#d9792f"} transparent opacity={.85} depthTest={false} depthWrite={false} />
       </mesh>)}
       <mesh position-y={.185} renderOrder={2}><sphereGeometry args={[.028,8,6]} /><meshBasicMaterial color="#ffab54" transparent depthTest={false} depthWrite={false} /></mesh>
     </group>
+    <group ref={arrow} position={axis.clone().multiplyScalar(.5)} quaternion={aim}>
+      <mesh renderOrder={3}><coneGeometry args={[.075,.17,14]} /><meshBasicMaterial color="#ff713d" depthTest={false} depthWrite={false} /></mesh>
+      <mesh position-y={.15} renderOrder={3}><cylinderGeometry args={[.026,.026,.16,10]} /><meshBasicMaterial color="#ff713d" depthTest={false} depthWrite={false} /></mesh>
+    </group>
     <mesh><sphereGeometry args={[.255,12,8]} /><meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} /></mesh>
   </group>;
+}
+
+// Komponen berikutnya berdenyut pelan dan lingkaran jingga di lantai ikut berkedip.
+function Pulse({ children, active }: { children:ReactNode; active:boolean }) {
+  const ref = useRef<THREE.Group>(null);
+  const clock = useRef(0);
+  const invalidate = useThree(s => s.invalidate);
+  useFrame((_,dt) => {
+    if (!ref.current || !active || prefersReducedMotion()) return;
+    clock.current += Math.min(dt,.04);
+    ref.current.scale.setScalar(1 + Math.sin(clock.current*4)*.035);
+    invalidate();
+  });
+  return <group ref={ref}>{children}</group>;
+}
+function PulseRing({ radius, color }: { radius:number; color:string }) {
+  const material = useRef<THREE.MeshBasicMaterial>(null);
+  const clock = useRef(0);
+  const invalidate = useThree(s => s.invalidate);
+  useFrame((_,dt) => {
+    if (!material.current || prefersReducedMotion()) return;
+    clock.current += Math.min(dt,.04);
+    material.current.opacity = .35 + (Math.sin(clock.current*4)+1)*.28;
+    invalidate();
+  });
+  return <mesh rotation-x={-Math.PI/2}>
+    <ringGeometry args={[radius-.012,radius+.012,64]} />
+    <meshBasicMaterial ref={material} color={color} transparent opacity={.6} depthWrite={false} side={THREE.DoubleSide} />
+  </mesh>;
 }
 
 function Robot({ models, stand, game, socket, wrist }: {
@@ -313,7 +376,7 @@ function Robot({ models, stand, game, socket, wrist }: {
       {built ? <SeatedPart index={i} forearmAngle={joints.shoulder+joints.elbow}>{model}</SeatedPart> :
         (current && (showBlueprint || selected===i)) && model}
       {current && <group ref={socket}>
-        <Locator active={selected===i} onClick={e => {
+        <Locator active={selected===i} index={i} forearmAngle={joints.shoulder+joints.elbow} onClick={e => {
           e.stopPropagation();
           if (e.delta > 4) return;
           if (selected === i) game.place(0,i);
@@ -347,10 +410,10 @@ function Robot({ models, stand, game, socket, wrist }: {
 
 type Gesture = {
   index:number; pointerId:number; startX:number; startY:number; dragging:boolean;
-  capture: Element; plane: THREE.Plane; offset: THREE.Vector3;
+  capture: Element; plane: THREE.Plane; offset: THREE.Vector3; snapped: boolean;
 };
-function LooseParts({ models,game,socket,lock,controls,inspecting }: {
-  models:THREE.Object3D[]; game:Game; socket:RefObject<THREE.Group|null>; lock:RefObject<boolean>; controls:RefObject<OrbitControls|null>; inspecting:number|null;
+function LooseParts({ models,game,socket,lock,controls,inspecting,bus }: {
+  bus:Bus; models:THREE.Object3D[]; game:Game; socket:RefObject<THREE.Group|null>; lock:RefObject<boolean>; controls:RefObject<OrbitControls|null>; inspecting:number|null;
 }) {
   const { camera,gl,invalidate } = useThree();
   const slotFor = useCallback((i:number) => i === 5 && game.robotMode === "hand" ? HAND_SLOT : LOOSE[i], [game.robotMode]);
@@ -418,6 +481,7 @@ function LooseParts({ models,game,socket,lock,controls,inspecting }: {
     const normal = new THREE.Vector3(), anchor = new THREE.Vector3(), point = new THREE.Vector3();
     const uv = new THREE.Vector2(), plane = new THREE.Plane();
     let moved:number|null = null;
+    let snapped = false;
     function project(event:DragEvent) {
       if (!socket.current) return false;
       const bounds = el.getBoundingClientRect();
@@ -432,7 +496,7 @@ function LooseParts({ models,game,socket,lock,controls,inspecting }: {
         const part = slots.current[moved];
         if (part) rest(moved,part);
       }
-      moved = null;
+      moved = null; snapped = false;
       invalidate();
     }
     function over(event:DragEvent) {
@@ -443,7 +507,10 @@ function LooseParts({ models,game,socket,lock,controls,inspecting }: {
       const part = slots.current[index];
       if (!part) return;
       moved = index;
-      part.position.copy(point.distanceTo(anchor) <= SNAP_DISTANCE ? anchor : point);
+      const near = point.distanceTo(anchor) <= SNAP_DISTANCE;
+      if (near && !snapped) bus.emit({ type:"magnet", pos:[anchor.x,anchor.y,anchor.z] });
+      snapped = near;
+      part.position.copy(near ? anchor : point);
       socket.current.getWorldQuaternion(part.quaternion);
       invalidate();
     }
@@ -464,7 +531,7 @@ function LooseParts({ models,game,socket,lock,controls,inspecting }: {
       el.removeEventListener("dragover",over); el.removeEventListener("drop",drop);
       el.removeEventListener("dragleave",restore); window.removeEventListener("dragend",restore); restore();
     };
-  },[gl,camera,socket,invalidate,rest]);
+  },[gl,camera,socket,invalidate,rest,bus]);
   const begin = (i:number,e:Pointer) => {
     if (e.button!==0 || gesture.current || !socket.current || i!==game.count) return;
     if (e.intersections.some(hit => hit.eventObject.userData.assemblySocket)) return;
@@ -483,7 +550,7 @@ function LooseParts({ models,game,socket,lock,controls,inspecting }: {
     holdCamera(true);
     gesture.current = {
       index:i,pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,dragging:false,
-      capture,plane,offset:fromAnchor.sub(point),
+      capture,plane,offset:fromAnchor.sub(point),snapped:false,
     };
     if (game.selected!==i) game.select(i);
   };
@@ -498,7 +565,10 @@ function LooseParts({ models,game,socket,lock,controls,inspecting }: {
     const anchor = target.getWorldPosition(new THREE.Vector3());
     part.position.copy(pointer).add(g.offset);
     const distance = Math.min(pointer.distanceTo(anchor),part.position.distanceTo(anchor));
-    if (distance <= SNAP_DISTANCE) part.position.copy(anchor);
+    const near = distance <= SNAP_DISTANCE;
+    if (near) part.position.copy(anchor);
+    if (near && !g.snapped) bus.emit({ type:"magnet", pos:[anchor.x,anchor.y,anchor.z] });
+    g.snapped = near;
     target.getWorldQuaternion(part.quaternion);
     return distance;
   };
@@ -528,6 +598,9 @@ function LooseParts({ models,game,socket,lock,controls,inspecting }: {
       {selected && inspecting!==i && <group position={[slot.pos[0],.013,slot.pos[2]]}>
         <Ring radius={.28} thickness={.018} color="#38876c" opacity={.88} />
       </group>}
+      {!selected && i===game.count && inspecting!==i && <group position={[slot.pos[0],.013,slot.pos[2]]}>
+        <PulseRing radius={.3} color="#ff713d" />
+      </group>}
       <group ref={el => { slots.current[i]=el; }} position={slot.pos} rotation={slot.rot}
         onPointerDown={i===game.count ? e => begin(i,e) : undefined}
         onPointerMove={i===game.count ? move : undefined}
@@ -535,14 +608,15 @@ function LooseParts({ models,game,socket,lock,controls,inspecting }: {
         onPointerOver={i===game.count ? () => { gl.domElement.style.cursor="grab"; } : undefined}
         onPointerOut={i===game.count ? () => { gl.domElement.style.cursor=""; } : undefined}>
         <group rotation={selected ? (i < 2 ? [0,game.rotation*D,0] : i===5 ? [game.rotation*D,0,0] : [0,0,game.rotation*D]) : [0,0,0]}>
-          <PartModel index={i} source={model} game={game} style={selected ? "selected" : "real"}/>
+          <Pulse active={i===game.count && !selected}><PartModel index={i} source={model} game={game} style={selected ? "selected" : "real"}/></Pulse>
         </group>
       </group>
     </group>;
   })}</>;
 }
 
-function Workbench({ game,view="perspective",cameraReset=0,socketFocus=0,zoom=0,onReady }: WorkshopSceneProps) {
+function Workbench({ game,view="perspective",cameraReset=0,socketFocus=0,zoom=0,bus:given,onReady }: WorkshopSceneProps) {
+  const bus = useMemo(() => given ?? createBus(),[given]);
   const asset = useLoader(GLTFLoader,"/models/rakitron-arm.glb");
   const models = useMemo(() => NAMES.map(name => {
     const part = asset.scene.getObjectByName(name);
@@ -550,6 +624,7 @@ function Workbench({ game,view="perspective",cameraReset=0,socketFocus=0,zoom=0,
     return part;
   }),[asset]);
   const stand = useMemo(() => asset.scene.getObjectByName("Stand"),[asset]);
+  const slotPos = useCallback((i:number) => (i === 5 && game.robotMode === "hand" ? HAND_SLOT : LOOSE[i]).pos,[game.robotMode]);
   const socket = useRef<THREE.Group|null>(null);
   const wrist = useRef<THREE.Group|null>(null);
   const lock = useRef(false);
@@ -573,8 +648,10 @@ function Workbench({ game,view="perspective",cameraReset=0,socketFocus=0,zoom=0,
     <StudioLights />
     <CameraRig view={view} reset={cameraReset} zoom={zoom} lock={lock} focus={socketFocus} socket={socket} wrist={wrist} controls={controls} inspecting={activeInspection} complete={game.count===6} forearmAngle={game.joints.shoulder+game.joints.elbow} />
     <WorkshopTable />
-    <Robot stand={stand} models={models} game={game} socket={socket} wrist={wrist} />
-    <LooseParts key={game.robotMode} models={models} game={game} socket={socket} lock={lock} controls={controls} inspecting={typeof activeInspection === "number" ? activeInspection : null} />
+    <Effects bus={bus} slotPos={slotPos}>
+      <Robot stand={stand} models={models} game={game} socket={socket} wrist={wrist} />
+      <LooseParts key={game.robotMode} bus={bus} models={models} game={game} socket={socket} lock={lock} controls={controls} inspecting={typeof activeInspection === "number" ? activeInspection : null} />
+    </Effects>
     <ReceiverTray tray={TRAY} />
     <group name="MissionCube" position={game.cube.position} quaternion={game.cube.orientation}>
       <WoodenCube position={[0,0,0]} yaw={0} />

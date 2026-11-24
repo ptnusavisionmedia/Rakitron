@@ -58,3 +58,9 @@ Proyek ini adalah Next.js dengan ekspor statis (`output: 'export'`), jadi tidak 
 3. Framework terdeteksi otomatis sebagai Next.js; pengaturan build ada di `vercel.json`. Klik **Deploy**.
 
 Atau lewat CLI: `npx vercel` (preview) dan `npx vercel --prod` (produksi).
+
+## Efek perakitan dan suara
+
+Setiap komponen meluncur ke soket, menumbuk dengan bunyi "klik", memercikkan bintang, lalu bergetar sebentar. Tiap komponen yang terpasang menaikkan satu nada tangga nada pentatonik, sehingga enam komponen membentuk melodi kecil. Panah jingga menunjuk soket tujuan, komponen berikutnya berdenyut di meja, dan ada bunyi "tink" ketika komponen yang diseret masuk jangkauan soket. Saat robot selesai dan misi berhasil, muncul spanduk sorakan, konfeti, dan fanfare.
+
+Pada Uji gerak, sendi berbunyi seperti servo, capit atau tangan berbunyi saat menggenggam, dan kubus berdebam ketika mendarat. Semua bunyi disintesis dengan Web Audio di `lib/sfx.ts`, tanpa berkas audio. Suara menyala secara bawaan; tombol speaker mematikannya, dan tombol not musik menyalakan lagu latar. Pilihan disimpan di browser. Efek gerak dinonaktifkan bila sistem meminta *reduced motion*.

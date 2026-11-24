@@ -6,9 +6,12 @@ import {
   ArrowDownToLine, ArrowRight, BookOpen, Box, Boxes, Check,
   CircleHelp, Crosshair, Expand, Focus, Grab, Hand,
   Layers3, Minus, MousePointer2, Orbit, Plus, RotateCcw,
-  RotateCw, SlidersHorizontal, Undo2, Volume2, VolumeX, Wrench, X,
+  RotateCw, SlidersHorizontal, Undo2, Volume2, VolumeX, Wrench, X, Music, Music2,
 } from "lucide-react";
 import { JOINT_LIMITS, partsFor, turnsToAlign, type RobotMode } from "../lib/game";
+import { PLACE_LAND, createBus, useGameEvents } from "../lib/gameEvents";
+import { sfx } from "../lib/sfx";
+import Cheer from "./Cheer";
 import HandControls from "./HandControls";
 import WristControls from "./WristControls";
 import { useGame, type Game } from "../lib/useGame";
@@ -134,8 +137,9 @@ export default function Workshop() {
   const [zoom, setZoom] = useState(0);
   const [cameraReset, setCameraReset] = useState(0);
   const [socketFocus, setSocketFocus] = useState(0);
-  const [sound, setSound] = useState(false);
-  const soundRef = useRef<AudioContext | null>(null);
+  const [sound, setSound] = useState(true);
+  const [music, setMusic] = useState(false);
+  const bus = useRef(createBus()).current;
   const previousCount = useRef(0);
   const previousSelection = useRef<number | null>(null);
   const primaryAction = useRef<HTMLButtonElement>(null);
@@ -150,44 +154,66 @@ export default function Workshop() {
   const referenceAlt = isHand ? "Lengan robot lengkap dengan tangan lima jari" : "Lengan robot lengkap dengan capit paralel";
   const needsRotation = selected !== null && turnsToAlign(game.rotation) > 0;
 
-  function playClick(kind: "select" | "placed") {
-    const context = soundRef.current;
-    if (!context || context.state !== "running") return;
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    const at = context.currentTime;
-    oscillator.type = kind === "placed" ? "sine" : "triangle";
-    oscillator.frequency.setValueAtTime(kind === "placed" ? 510 : 390, at);
-    oscillator.frequency.exponentialRampToValueAtTime(kind === "placed" ? 810 : 310, at + .075);
-    gain.gain.setValueAtTime(.035, at);
-    gain.gain.exponentialRampToValueAtTime(.001, at + .12);
-    oscillator.connect(gain); gain.connect(context.destination);
-    oscillator.start(at); oscillator.stop(at + .13);
-  }
-  function toggleSound() {
-    if (sound) { setSound(false); return; }
+  useGameEvents(game, bus);
+  // Suara menyala secara bawaan; pilihan anak disimpan. Browser baru mengizinkan bunyi setelah sentuhan pertama.
+  useEffect(() => {
     try {
-      const context = soundRef.current ?? new AudioContext();
-      soundRef.current = context;
-      void context.resume().then(() => playClick("select"));
-      setSound(true);
-    } catch { setSound(false); }
+      if (localStorage.getItem("rakitron-sound") === "off") setSound(false);
+      if (localStorage.getItem("rakitron-music") === "on") setMusic(true);
+    } catch { /* penyimpanan tidak tersedia */ }
+    const unlock = () => { void sfx.unlock(); };
+    window.addEventListener("pointerdown", unlock, { capture: true });
+    window.addEventListener("keydown", unlock, { capture: true });
+    return () => { window.removeEventListener("pointerdown", unlock, { capture: true }); window.removeEventListener("keydown", unlock, { capture: true }); };
+  }, []);
+  useEffect(() => { sfx.setEnabled(sound); }, [sound]);
+  useEffect(() => { sfx.setMusic(music && sound); }, [music, sound]);
+  useEffect(() => bus.on(event => {
+    switch (event.type) {
+      case "select": sfx.play("select"); break;
+      case "rotate": sfx.play("rotate"); break;
+      case "placed":
+        if (event.bulk) break;
+        sfx.play("whoosh");
+        sfx.play("snap", { delay: PLACE_LAND });
+        if (!event.complete) sfx.play("note", { delay: PLACE_LAND + .02, step: event.index });
+        break;
+      case "complete": sfx.play("fanfare", { delay: event.bulk ? 0 : PLACE_LAND + .12 }); break;
+      case "undo": sfx.play("undo"); break;
+      case "magnet": sfx.play("magnet"); break;
+      case "servo": sfx.play("servo", { amount: event.amount }); break;
+      case "grab": sfx.play("grab"); break;
+      case "release": sfx.play("release"); break;
+      case "land": sfx.play("land"); break;
+      case "win": sfx.play("win"); break;
+    }
+  }), [bus]);
+  function toggleSound() {
+    const next = !sound;
+    setSound(next);
+    try { localStorage.setItem("rakitron-sound", next ? "on" : "off"); } catch { /* abaikan */ }
+    if (next) { sfx.setEnabled(true); void sfx.unlock().then(() => sfx.play("select")); }
+  }
+  function toggleMusic() {
+    const next = !music;
+    setMusic(next);
+    try { localStorage.setItem("rakitron-music", next ? "on" : "off"); } catch { /* abaikan */ }
+    if (next && !sound) toggleSound();
+    void sfx.unlock();
   }
   useEffect(() => {
     if (count > previousCount.current) {
-      if (sound) playClick("placed");
       if (complete) { setDesktopPane("motion"); setPane("motion"); }
     } else if (selected !== null && selected !== previousSelection.current) {
       setDesktopPane("assembly");
       setPane("assembly");
-      if (sound) playClick("select");
     } else if (count < previousCount.current && count > 0) {
       setDesktopPane("assembly");
       setPane("assembly");
     }
     previousCount.current = count;
     previousSelection.current = selected;
-  }, [count, selected, sound, complete]);
+  }, [count, selected, complete]);
   useEffect(() => {
     if (dialog) return;
     const keydown = (e: KeyboardEvent) => {
@@ -224,7 +250,9 @@ export default function Workshop() {
         <a href="#bengkel" className="active"><Wrench size={16}/> Bengkel</a>
         <button onClick={() => setDialog("help")}><BookOpen size={16}/> Cara bermain</button>
       </nav>
-      <div className="header-actions"><button className={`sound-button ${sound ? "is-on" : ""}`} title={sound ? "Matikan suara" : "Aktifkan suara"} aria-label={sound ? "Matikan suara" : "Aktifkan suara"} aria-pressed={sound} onClick={toggleSound}>{sound ? <Volume2 size={17}/> : <VolumeX size={17}/>}</button>
+      <div className="header-actions">
+        <button className={`sound-button ${music && sound ? "is-on" : ""}`} title={music ? "Matikan musik" : "Nyalakan musik"} aria-label={music ? "Matikan musik" : "Nyalakan musik"} aria-pressed={music} onClick={toggleMusic}>{music && sound ? <Music2 size={17}/> : <Music size={17}/>}</button>
+        <button className={`sound-button ${sound ? "is-on" : ""}`} title={sound ? "Matikan suara" : "Aktifkan suara"} aria-label={sound ? "Matikan suara" : "Aktifkan suara"} aria-pressed={sound} onClick={toggleSound}>{sound ? <Volume2 size={17}/> : <VolumeX size={17}/>}</button>
         <button className="restart-button" onClick={() => setDialog("restart")}><RotateCcw size={15}/><span>Mulai ulang</span></button>
       </div>
     </div></header>
@@ -248,7 +276,8 @@ export default function Workshop() {
       </div>
       <div className="workspace" data-pane={pane} data-hand-ready={isHand && complete}>
         <section className="scene-panel" aria-label="Meja perakitan tiga dimensi">
-          <WorkshopScene game={game} view={view} zoom={zoom} cameraReset={cameraReset} socketFocus={socketFocus}/>
+          <WorkshopScene game={game} bus={bus} view={view} zoom={zoom} cameraReset={cameraReset} socketFocus={socketFocus}/>
+          <Cheer bus={bus} nameOf={i => parts[i]?.name ?? "Komponen"}/>
           <div className="scene-caption"><span className="live-dot"/><span>Meja kerja</span></div>
           <button className="socket-focus" disabled={complete && !isHand} onClick={() => setSocketFocus(v => v + 1)} title={complete && isHand ? "Lihat tangan" : "Lihat sambungan"}><Crosshair size={14}/><span>{complete && isHand ? "Lihat tangan" : "Lihat sambungan"}</span></button>
           <CameraToolbar view={view} setView={setView} reset={resetCamera} zoom={n => setZoom(v => Math.max(-6, Math.min(8, v + n)))}/>
@@ -275,7 +304,7 @@ export default function Workshop() {
               <p aria-live="polite">{game.hint}</p>
             </div>
             <div className="assembly-actions">
-              <button ref={primaryAction} className="primary-button" onClick={() => {
+              <button ref={primaryAction} className={`primary-button ${!complete && !needsRotation ? "attention" : ""}`} onClick={() => {
                 if (complete) changePane("motion");
                 else if (selected === null) choose(count);
                 else if (needsRotation) game.rotate();
