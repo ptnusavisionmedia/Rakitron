@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { HAND_PRESETS } from '../lib/game.ts';
+import { HAND_PRESETS, HAND_WRIST_PIVOT, wristQuaternion } from '../lib/game.ts';
 import { createRoboticHand } from '../lib/handModel.ts';
 
 const open = HAND_PRESETS.open.fingers;
@@ -139,15 +139,71 @@ test('cube contact stops each supporting finger at the surface in both holds', t
   }
 });
 
-test('moving the wrist carries the fingers while its mount stays fixed', t => {
+test('rotor, cross and palm use their own axes throughout a complete revolution', t => {
   const rig = setup(t);
   apply(rig, 'point');
-  const before = point(rig,'ThumbTip');
-  const mount = node(rig, 'WristMount').matrixWorld.clone();
-  rig.wristPivot.rotation.set(.30,-.24,.52);
-  rig.group.updateMatrixWorld(true);
-  assert.ok(point(rig,'ThumbTip').distanceTo(before.applyQuaternion(rig.wristPivot.quaternion)) < 1e-8);
-  assert.deepEqual(node(rig,'WristMount').matrixWorld.elements,mount.elements);
+  const mount = node(rig, 'WristMount');
+  const socket = mount.matrixWorld.clone();
+  const pivot = new THREE.Vector3(...HAND_WRIST_PIVOT);
+  const thumb = point(rig,'ThumbTip').sub(pivot);
+  const neutralGrip = point(rig,'GripCenter').sub(pivot);
+  assert.equal(rig.rollPivot.parent, mount);
+  assert.equal(rig.deviationPivot.parent, rig.rollPivot);
+  assert.equal(rig.wristPivot.parent, rig.deviationPivot);
+  const distal = new THREE.Vector3(0,-1,0);
+  const rotorMarker = new THREE.Vector3(0,.076,-.070);
+  const up = new THREE.Vector3(0,1,0);
+  for (const pitch of [-65,0,75]) for (const deviation of [-30,0,20]) {
+    for (let roll=-360; roll<=720; roll+=30) {
+      const angles = { pitch, deviation, roll };
+      rig.setWrist(angles);
+      rig.group.updateMatrixWorld(true);
+      const q = new THREE.Quaternion(...wristQuaternion(angles));
+      assert.ok(socket.equals(mount.matrixWorld));
+      assert.ok(rig.wristPivot.getWorldPosition(new THREE.Vector3()).distanceTo(pivot) < 1e-9);
+      const marker = rig.rollPivot.localToWorld(rotorMarker.clone());
+      assert.ok(marker.distanceTo(rotorMarker.clone().applyAxisAngle(up,roll*Math.PI/180).add(pivot)) < 1e-9);
+      const direction = distal.clone().transformDirection(rig.wristPivot.matrixWorld);
+      assert.ok(direction.distanceTo(distal.clone().applyQuaternion(q)) < 1e-9);
+      assert.ok(point(rig,'GripCenter').distanceTo(neutralGrip.clone().applyQuaternion(q).add(pivot)) < 1e-9);
+      assert.ok(point(rig,'ThumbTip').distanceTo(thumb.clone().applyQuaternion(q).add(pivot)) < 1e-9);
+    }
+  }
+});
+
+test('heel and pitch lugs clear the rotating flange and stationary bearing at maximum tilt', t => {
+  const rig = setup(t);
+  const pivot = new THREE.Vector3(...HAND_WRIST_PIVOT);
+  const samples = group => {
+    const points = [];
+    for (const mesh of group.children.filter(child => child.isMesh)) {
+      const attr = mesh.geometry.getAttribute('position');
+      for (let i=0; i<attr.count; i++) points.push(new THREE.Vector3().fromBufferAttribute(attr,i));
+    }
+    return points;
+  };
+  const skirt = samples(node(rig,'WristMount')).map(p => p.sub(pivot)).filter(p => {
+    const r = Math.hypot(p.x,p.z);
+    return r > .073 && r < .088;
+  });
+  const flange = samples(rig.rollPivot).filter(p => p.y > .035 && Math.hypot(p.x,p.z) > .060);
+  const skirtBase = Math.min(...skirt.map(p => p.y));
+  const flangeBase = Math.min(...flange.map(p => p.y));
+  assert.ok(Number.isFinite(skirtBase) && Number.isFinite(flangeBase));
+  for (const part of [rig.wristPivot,node(rig,'PalmBody')]) {
+    const verts = samples(part);
+    const current = new THREE.Vector3();
+    for (const pitch of [-65,-45,0,45,65,75]) for (const deviation of [-30,0,20]) {
+      rig.setWrist({pitch,deviation,roll:45});
+      rig.group.updateMatrixWorld(true);
+      for (const v of verts) {
+        current.copy(v).applyMatrix4(part.matrixWorld).sub(pivot);
+        const radius = Math.hypot(current.x,current.z);
+        if (radius > .048 && radius < .085) assert.ok(current.y < skirtBase, part.name+' touched fixed housing');
+        if (radius > .022 && radius < .070) assert.ok(current.y < flangeBase, part.name+' touched rotor flange');
+      }
+    }
+  }
 });
 
 function rigidTriangles(group) {

@@ -3,7 +3,7 @@ import { AnimationClip, QuaternionKeyframeTrack, Scene } from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { FINGERS, HAND_PRESETS, NEUTRAL_WRIST, wristQuaternion } from "../lib/game.ts";
+import { FINGERS, HAND_PRESETS, NEUTRAL_WRIST } from "../lib/game.ts";
 import { createRoboticHand } from "../lib/handModel.ts";
 
 // The Three.js exporter reads its final binary Blob through the browser FileReader API.
@@ -39,7 +39,6 @@ oldTool.parent.add(hand.group);
 hand.group.position.copy(oldTool.position);
 hand.group.quaternion.copy(oldTool.quaternion);
 hand.group.scale.copy(oldTool.scale);
-const wristPivot = hand.wristPivot;
 oldTool.removeFromParent();
 
 const pivots = [];
@@ -69,7 +68,7 @@ const clips = Object.entries(gestures).map(([id, name]) => {
     new QuaternionKeyframeTrack(node.uuid + ".quaternion", times, rotations[index])));
 });
 
-// One beat per anatomical axis, returning to neutral before the next motion.
+// A quarter turn between consecutive roll keys preserves the direction of the full revolution in glTF.
 const wristKeys = [
   [0, NEUTRAL_WRIST],
   [.55, { ...NEUTRAL_WRIST, pitch: 50 }],
@@ -77,19 +76,21 @@ const wristKeys = [
   [1.85, NEUTRAL_WRIST],
   [2.30, { ...NEUTRAL_WRIST, deviation: 18 }],
   [2.90, { ...NEUTRAL_WRIST, deviation: -25 }],
-  [3.45, NEUTRAL_WRIST],
-  [4.0, { ...NEUTRAL_WRIST, roll: 65 }],
-  [4.85, { ...NEUTRAL_WRIST, roll: -62 }],
-  [5.5, NEUTRAL_WRIST],
+  [3.5, NEUTRAL_WRIST],
+  [4.25, { ...NEUTRAL_WRIST, roll: 90 }],
+  [5, { ...NEUTRAL_WRIST, roll: 180 }],
+  [5.75, { ...NEUTRAL_WRIST, roll: 270 }],
+  [6.5, { ...NEUTRAL_WRIST, roll: 360 }],
 ];
-const wristClip = new AnimationClip("Pergelangan", -1, [
-  new QuaternionKeyframeTrack(
-    wristPivot.uuid + ".quaternion",
-    wristKeys.map(([time]) => time),
-    wristKeys.flatMap(([, angles]) => wristQuaternion(angles)),
-  ),
-]);
-clips.push(wristClip);
+const wristJoints = [hand.rollPivot, hand.deviationPivot, hand.wristPivot];
+const wristValues = wristJoints.map(() => []);
+for (const [, angles] of wristKeys) {
+  hand.setWrist(angles);
+  wristJoints.forEach((joint, index) => wristValues[index].push(...joint.quaternion.toArray()));
+}
+clips.push(new AnimationClip("Pergelangan", -1, wristJoints.map((joint, index) =>
+  new QuaternionKeyframeTrack(joint.uuid + ".quaternion", wristKeys.map(([time]) => time), wristValues[index]))));
+hand.setWrist(NEUTRAL_WRIST);
 
 hand.update(HAND_PRESETS.open.fingers, HAND_PRESETS.open.opposition);
 arm.updateMatrixWorld(true);

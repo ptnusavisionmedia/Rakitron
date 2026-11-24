@@ -24,6 +24,7 @@ export function useGame() {
     tryHand: () => dispatch({ type: 'tryHand' }),
     setRobotMode: (mode: RobotMode) => dispatch({ type: 'robotMode', mode }),
     setWrist: (key: WristAxis, value: number) => dispatch({ type: 'wrist', key, value }),
+    turnWrist: (delta: number) => dispatch({ type: 'turnWrist', delta }),
     resetWrist: () => dispatch({ type: 'resetWrist' }),
     setFinger: (key: Finger, value: number) => dispatch({ type: 'finger', key, value }),
     setOpposition: (value: number) => dispatch({ type: 'opposition', value }),

@@ -34,7 +34,7 @@ Tombol antarmuka dapat difokuskan dengan Tab dan diaktifkan dengan Enter atau Sp
 
 Pilih **Tangan lima jari** di atas meja. Gunakan **Coba tangan terakit** untuk menguji tangan secara langsung, atau rakit keenam komponen dari laci. Saat mengganti model yang sudah lengkap, lima komponen lengan tetap terpasang dan alat ujung baru siap dipasang.
 
-Pada tab **Pergelangan** di **Uji gerak**, gunakan **Tekuk pergelangan** untuk mengarahkan tangan ke telapak atau punggung, **Miringkan pergelangan** untuk bergerak ke sisi ibu jari atau kelingking, dan **Putar telapak** untuk memutar tangan pada sumbu panjangnya. **Netralkan pergelangan** mengembalikan ketiga sudut ke 0°. Saat membawa kubus, angkat lengan untuk memberi ruang sebelum memutar tangan.
+Di **Uji gerak → Pergelangan**, penggeser **Putar telapak** memilih sudut 0° sampai 360°. Tombol **Kiri 30°** dan **Kanan 30°** dapat ditekan berulang untuk melewati 0° atau 360°. **Putar 360°** menjalankan satu putaran dari posisi sekarang dan **Hentikan putaran** menghentikannya di sudut yang terlihat. Gunakan **Tekuk pergelangan** dan **Miringkan pergelangan** untuk mengarahkan telapak. **Netralkan pergelangan** mengembalikan ketiga sudut ke 0°. Jika gerakan tertahan dekat meja, angkat lengan untuk memberi ruang. Jika telapak menyentuh lengan bawah, kurangi tekukan pergelangan atau ubah sudut siku.
 
 Di **Uji gerak → Jari**, geser satu jari untuk mengubah tekukannya. Penggeser **Oposisi ibu jari** memutar ibu jari ke arah telunjuk. Tombol **Buka**, **Genggam**, **Cubit** dan **Tunjuk** menggerakkan jari secara bersamaan. Pilih **Lihat tangan** untuk memeriksa ruas dari dekat dan **Atur ulang kamera** untuk melihat meja.
 

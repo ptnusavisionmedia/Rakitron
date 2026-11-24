@@ -9,7 +9,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { Game } from "../lib/useGame";
-import { SNAP_DISTANCE, TRAY, wristQuaternion } from "../lib/game";
+import { SNAP_DISTANCE, TRAY } from "../lib/game";
 import { PLACE_LAND, createBus, type Bus } from "../lib/gameEvents";
 import RoboticHand from "./RoboticHand";
 import { Effects, useFx } from "./Effects";
@@ -30,15 +30,22 @@ export type WorkshopSceneProps = {
   onReady?: () => void;
 };
 type Pointer = ThreeEvent<PointerEvent>;
+// Local to the wrist gimbal, between the rotary bearing and the extended fingertips.
+const HAND_INSPECTION_CENTER: V3 = [0,-.16,0];
 const CAMERA = { position:[4.4,3.5,5.75] as V3, fov:34, near:.075, far:65 };
 const RENDERER = { antialias:true, alpha:false, powerPreference:"high-performance" as const,
   toneMapping:THREE.ACESFilmicToneMapping, toneMappingExposure:.95 };
 const SHADOWS = {type:THREE.PCFSoftShadowMap};
 const NAMES = ["Base","Shoulder","UpperArm","Elbow","Forearm","Gripper"] as const;
 const D = Math.PI / 180;
-function insertionAxis(index:number, forearmAngle=0) {
+// The hand slides onto the outboard cross pin; the gripper seats from the distal end of the boom.
+function gripperApproachAngle(game: Game) {
+  return game.robotMode === "gripper" ? game.joints.shoulder + game.joints.elbow : null;
+}
+function insertionAxis(index:number, toolApproachAngle:number|null) {
   if (index < 2) return new THREE.Vector3(0,1,0);
-  if (index === 5) return new THREE.Vector3(Math.cos(forearmAngle*D),Math.sin(forearmAngle*D),0);
+  if (index === 5) return toolApproachAngle === null ? new THREE.Vector3(0,0,-1) :
+    new THREE.Vector3(Math.cos(toolApproachAngle*D),Math.sin(toolApproachAngle*D),0);
   return new THREE.Vector3(0,0,1);
 }
 
@@ -85,7 +92,7 @@ function StudioLights() {
   </>;
 }
 
-function CameraRig({ view, reset, zoom, lock, focus, socket, wrist, controls, inspecting, complete, forearmAngle }: { view: View; reset: number; zoom: number; lock: RefObject<boolean>; focus:number; socket:RefObject<THREE.Group|null>; wrist:RefObject<THREE.Group|null>; controls:RefObject<OrbitControls|null>; inspecting:Inspection; complete:boolean; forearmAngle:number }) {
+function CameraRig({ view, reset, zoom, lock, focus, socket, wrist, controls, inspecting, complete, toolApproachAngle }: { view: View; reset: number; zoom: number; lock: RefObject<boolean>; focus:number; socket:RefObject<THREE.Group|null>; wrist:RefObject<THREE.Group|null>; controls:RefObject<OrbitControls|null>; inspecting:Inspection; complete:boolean; toolApproachAngle:number|null }) {
   const { camera, gl, size, invalidate } = useThree();
   const lastZoom = useRef(zoom);
   const previousReset = useRef(reset);
@@ -138,19 +145,19 @@ function CameraRig({ view, reset, zoom, lock, focus, socket, wrist, controls, in
     const c = controls.current;
     if (!c || !socket.current || typeof inspecting !== "number") return;
     const local = socket.current.getWorldQuaternion(new THREE.Quaternion());
-    const axis = insertionAxis(inspecting,forearmAngle).applyQuaternion(local).normalize();
+    const axis = insertionAxis(inspecting,toolApproachAngle).applyQuaternion(local).normalize();
     const center = socket.current.getWorldPosition(new THREE.Vector3()).addScaledVector(axis,.36);
     const direction = inspecting < 2 ? new THREE.Vector3(.68,.84,1).normalize() :
-      new THREE.Vector3(.76,.30,.78).applyQuaternion(local).add(new THREE.Vector3(0,.53,0)).normalize();
+      new THREE.Vector3(.76,.30,inspecting === 5 && toolApproachAngle === null ? -.78 : .78).applyQuaternion(local).add(new THREE.Vector3(0,.53,0)).normalize();
     const distance = Math.max(3.45,2.3/Math.max(.58,size.width/size.height));
     c.target.copy(center);
     camera.position.copy(center).addScaledVector(direction,distance);
     camera.lookAt(center); c.update();
-  },[camera,focus,socket,inspecting,forearmAngle,size.width,size.height]);
+  },[camera,focus,socket,inspecting,toolApproachAngle,size.width,size.height]);
   useEffect(() => {
     const c = controls.current;
     if (!c || inspecting !== "hand" || !wrist.current) return;
-    const center = wrist.current.localToWorld(palmCenter.set(0,-.40,0));
+    const center = wrist.current.localToWorld(palmCenter.fromArray(HAND_INSPECTION_CENTER));
     const direction = new THREE.Vector3(.52,.25,-1).transformDirection(wrist.current.matrixWorld);
     const distance = Math.max(c.minDistance, 2.0 / Math.max(.25,size.width/size.height));
     c.enableDamping = false;
@@ -167,7 +174,7 @@ function CameraRig({ view, reset, zoom, lock, focus, socket, wrist, controls, in
     if (!c || lock.current) return;
     if (inspecting === "hand" && wrist.current) {
       // Follow the palm center while preserving the camera's world-space viewing direction.
-      const target = wrist.current.localToWorld(palmCenter.set(0,-.40,0));
+      const target = wrist.current.localToWorld(palmCenter.fromArray(HAND_INSPECTION_CENTER));
       camera.position.sub(c.target).add(target);
       c.target.copy(target);
     }
@@ -244,7 +251,7 @@ function PartModel({ index, source, game, style, attached = false, wristRef }: {
 }) {
   if (index === 5 && game.robotMode === "hand") {
     return <RoboticHand angles={game.fingers} opposition={game.opposition}
-      wristQuaternion={attached ? wristQuaternion(game.wrist) : undefined}
+      wrist={attached ? game.wrist : undefined}
       wristRef={attached ? wristRef : undefined} holding={attached && game.cube.mode === "held"}
       preview={style === "blueprint" || style === "socket-preview"}
       highlighted={style === "selected" || style === "active"} />;
@@ -254,7 +261,7 @@ function PartModel({ index, source, game, style, attached = false, wristRef }: {
 
 const SETTLE = .8;
 // Komponen meluncur ke soket, menumbuk (bunyi "klik" dan percikan), lalu bergetar sebentar.
-function SeatedPart({ children, index, forearmAngle }: { children:ReactNode; index:number; forearmAngle:number }) {
+function SeatedPart({ children, index, toolApproachAngle }: { children:ReactNode; index:number; toolApproachAngle:number|null }) {
   const ref = useRef<THREE.Group>(null);
   const elapsed = useRef(0);
   const landed = useRef(false);
@@ -272,7 +279,7 @@ function SeatedPart({ children, index, forearmAngle }: { children:ReactNode; ind
     elapsed.current = Math.min(SETTLE,elapsed.current + Math.min(dt,.04));
     const t = elapsed.current;
     const approach = Math.min(1,t / PLACE_LAND);
-    group.position.copy(insertionAxis(index,forearmAngle)).multiplyScalar(.62 * (1 - approach * approach));
+    group.position.copy(insertionAxis(index,toolApproachAngle)).multiplyScalar(.62 * (1 - approach * approach));
     const after = Math.max(0,t - PLACE_LAND);
     const scale = t < PLACE_LAND ? 1 + .07 * (1 - approach) : 1 + .12 * Math.exp(-9 * after) * Math.cos(26 * after);
     group.scale.setScalar(t >= SETTLE ? 1 : scale);
@@ -286,14 +293,14 @@ function SeatedPart({ children, index, forearmAngle }: { children:ReactNode; ind
   });
   return <group ref={ref}>{children}</group>;
 }
-function Locator({ active, onClick, index, forearmAngle }: { active: boolean; onClick: (e:ThreeEvent<MouseEvent>)=>void; index:number; forearmAngle:number }) {
+function Locator({ active, onClick, index, toolApproachAngle }: { active: boolean; onClick: (e:ThreeEvent<MouseEvent>)=>void; index:number; toolApproachAngle:number|null }) {
   const marker = useRef<THREE.Group>(null);
   const arrow = useRef<THREE.Group>(null);
   const pulse = useRef(0);
   const clock = useRef(0);
   const invalidate = useThree(s => s.invalidate);
   const idle = useIdleInvalidate();
-  const axis = useMemo(() => insertionAxis(index,forearmAngle),[index,forearmAngle]);
+  const axis = useMemo(() => insertionAxis(index,toolApproachAngle),[index,toolApproachAngle]);
   const aim = useMemo(() => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),axis.clone().negate()),[axis]);
   useLayoutEffect(() => {
     pulse.current = active && !prefersReducedMotion() ? .58 : 0;
@@ -376,10 +383,10 @@ function Robot({ models, stand, game, socket, wrist }: {
       selected === i && current ? "socket-preview" : "blueprint";
     const model = <PartModel index={i} source={models[i]} style={style} game={game} attached={built} wristRef={wrist}/>;
     return <>
-      {built ? <SeatedPart index={i} forearmAngle={joints.shoulder+joints.elbow}>{model}</SeatedPart> :
+      {built ? <SeatedPart index={i} toolApproachAngle={gripperApproachAngle(game)}>{model}</SeatedPart> :
         (current && (showBlueprint || selected===i)) && model}
       {current && <group ref={socket}>
-        <Locator active={selected===i} index={i} forearmAngle={joints.shoulder+joints.elbow} onClick={e => {
+        <Locator active={selected===i} index={i} toolApproachAngle={gripperApproachAngle(game)} onClick={e => {
           e.stopPropagation();
           if (e.delta > 4) return;
           if (selected === i) game.place(0,i);
@@ -435,8 +442,7 @@ function LooseParts({ models,game,socket,lock,controls,inspecting,bus }: {
     if (inspecting === index && socket.current) {
       socket.current.getWorldQuaternion(node.quaternion);
       socket.current.getWorldPosition(node.position);
-      const j = last.current.joints;
-      const axis = insertionAxis(index,j.shoulder+j.elbow).applyQuaternion(node.quaternion);
+      const axis = insertionAxis(index,gripperApproachAngle(last.current)).applyQuaternion(node.quaternion);
       node.position.addScaledVector(axis,index < 2 ? .48 : .76);
     } else {
       const slot = slotFor(index);
@@ -652,7 +658,7 @@ function Workbench({ game,view="perspective",cameraReset=0,socketFocus=0,zoom=0,
   return <>
     <color attach="background" args={["#e8ece3"]} />
     <StudioLights />
-    <CameraRig view={view} reset={cameraReset} zoom={zoom} lock={lock} focus={socketFocus} socket={socket} wrist={wrist} controls={controls} inspecting={activeInspection} complete={game.count===6} forearmAngle={game.joints.shoulder+game.joints.elbow} />
+    <CameraRig view={view} reset={cameraReset} zoom={zoom} lock={lock} focus={socketFocus} socket={socket} wrist={wrist} controls={controls} inspecting={activeInspection} complete={game.count===6} toolApproachAngle={gripperApproachAngle(game)} />
     <WorkshopTable />
     <Effects bus={bus} slotPos={slotPos}>
       <Robot stand={stand} models={models} game={game} socket={socket} wrist={wrist} />

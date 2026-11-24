@@ -43,45 +43,63 @@ function withClip(name, check) {
   }
 }
 
-test('export attaches the wrist to the forearm and rotates the hand about the stationary socket', () => {
-  const scene = model.scene;
-  const hand = find(scene, 'RoboticHand');
+test('export keeps the wrist housing fixed and reproduces the three joint axes through a full turn', () => {
+  const hand = find(model.scene, 'RoboticHand');
   const mount = find(hand, 'WristMount');
-  const wrist = find(hand, 'WristArticulation');
-  const grip = find(wrist, 'GripCenter');
-  const socket = find(scene, 'SocketGripper');
-  assert.equal(hand.parent, find(scene, 'Forearm'));
-  assert.equal(wrist.parent, hand);
+  const rotor = find(mount, 'WristRotor');
+  const gimbal = find(rotor, 'WristGimbal');
+  const palm = find(gimbal, 'WristArticulation');
+  const grip = find(palm, 'GripCenter');
+  const socket = find(model.scene, 'SocketGripper');
+  assert.equal(hand.parent, find(model.scene, 'Forearm'));
   assert.equal(mount.parent, hand);
-  for (const name of ['Thumb', 'Index', 'Middle', 'Ring', 'Little']) find(wrist, name);
+  assert.equal(rotor.parent, mount);
+  assert.equal(gimbal.parent, rotor);
+  assert.equal(palm.parent, gimbal);
+  for (const name of ['Thumb', 'Index', 'Middle', 'Ring', 'Little']) find(palm, name);
 
   const position = node => node.getWorldPosition(new Vector3());
-  const pivot = position(wrist);
+  const localPosition = node => hand.worldToLocal(position(node));
   const originalMount = position(mount);
-  const fixedRotation = mount.getWorldQuaternion(new Quaternion());
-  const forearmMatrix = hand.parent.matrixWorld.clone();
-  assert.ok(pivot.distanceTo(position(socket)) < 0.00001);
-  const localGrip = wrist.worldToLocal(position(grip));
-  let last = 0;
+  const bearing = position(rotor);
+  const mountFrame = mount.matrixWorld.clone();
+  const forearmFrame = hand.parent.matrixWorld.clone();
+  assert.ok(originalMount.distanceTo(position(socket)) < 0.00001);
+  assert.ok(position(palm).distanceTo(bearing) < 0.00001);
+  assert.ok(position(gimbal).distanceTo(bearing) < 0.00001);
+  const runtimeGrip = find(rig.group, 'GripCenter');
+  const samples = [
+    [.55, { ...NEUTRAL_WRIST, pitch: 50 }],
+    [1.25, { ...NEUTRAL_WRIST, pitch: -38 }],
+    [2.30, { ...NEUTRAL_WRIST, deviation: 18 }],
+    [2.90, { ...NEUTRAL_WRIST, deviation: -25 }],
+  ];
+  // The halfway samples catch keys that snap or unwind on the second half of a turn.
+  for (let angle = 0; angle <= 360; angle += 45) {
+    samples.push([3.5 + angle / 120, { ...NEUTRAL_WRIST, roll: angle }]);
+  }
+  let previousTime = 0;
   withClip('Pergelangan', (clip, mixer) => {
-    const samples = [
-      [0.55, { ...NEUTRAL_WRIST, pitch: 50 }],
-      [2.30, { ...NEUTRAL_WRIST, deviation: 18 }],
-      [4.00, { ...NEUTRAL_WRIST, roll: 65 }],
-      [clip.duration, NEUTRAL_WRIST],
-    ];
+    assert.equal(clip.tracks.length, 3);
+    assert.equal(clip.duration, samples.at(-1)[0]);
     for (const [time, angles] of samples) {
-      mixer.update(time - last);
-      last = time;
+      mixer.update(time - previousTime);
+      previousTime = time;
+      rig.setWrist(angles);
       const expected = new Quaternion(...wristQuaternion(angles));
-      closeRotation(wrist.quaternion, expected, 'Wrist ' + time);
-      assert.ok(position(wrist).distanceTo(pivot) < 0.00001);
-      assert.ok(position(mount).distanceTo(originalMount) < 0.00001);
-      closeRotation(mount.getWorldQuaternion(new Quaternion()), fixedRotation, 'Fixed collar');
-      assert.ok(hand.parent.matrixWorld.equals(forearmMatrix), 'Wrist animation moved the forearm');
-      assert.ok(wrist.worldToLocal(position(grip)).distanceTo(localGrip) < 0.00001);
+      closeRotation(rotor.quaternion, rig.rollPivot.quaternion, 'Rotor ' + time);
+      closeRotation(gimbal.quaternion, rig.deviationPivot.quaternion, 'Gimbal ' + time);
+      closeRotation(palm.quaternion, rig.wristPivot.quaternion, 'Palm ' + time);
+      closeRotation(rotor.quaternion.clone().multiply(gimbal.quaternion).multiply(palm.quaternion), expected, 'Overall wrist ' + time);
+      assert.ok(position(rotor).distanceTo(bearing) < 0.00001);
+      assert.ok(position(gimbal).distanceTo(bearing) < 0.00001);
+      assert.ok(position(palm).distanceTo(bearing) < 0.00001);
+      assert.ok(mount.matrixWorld.equals(mountFrame), 'Housing moved at ' + time);
+      assert.ok(hand.parent.matrixWorld.equals(forearmFrame), 'Forearm moved at ' + time);
+      assert.ok(localPosition(grip).distanceTo(position(runtimeGrip)) < 0.00001, 'Grip center drifted at ' + time);
     }
   });
+  rig.setWrist(NEUTRAL_WRIST);
 });
 
 test('every exported gesture finishes at the runtime pose, including all three thumb joints', () => {

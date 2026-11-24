@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-import type { FingerAngles } from "./game";
+import { fingers, getFingerHinges, getThumbHinges, thumbLengths } from "./handKinematics.ts";
+import { HAND_WRIST_PIVOT, type FingerAngles, type WristAngles } from "./game.ts";
 
 export type HandAngles = FingerAngles;
 type Point = [number, number, number];
@@ -16,15 +17,6 @@ export type HandModelProps = {
 
 const DEG = Math.PI / 180;
 const DOWN = new THREE.Vector3(0, -1, 0);
-const fingers = [
-  { key: "index", name: "Index", x: .122, y: -.326, splay: 6.5, width: .070, cubeLimit: .506, lengths: [.137,.101,.073] },
-  { key: "middle", name: "Middle", x: .042, y: -.344, splay: 1.5, width: .074, cubeLimit: .443, lengths: [.146,.109,.081] },
-  { key: "ring", name: "Ring", x: -.043, y: -.337, splay: -3, width: .069, cubeLimit: .503, lengths: [.140,.101,.075] },
-  { key: "little", name: "Little", x: -.121, y: -.315, splay: -9, width: .060, cubeLimit: .690, lengths: [.111,.080,.062] },
-] as const;
-const thumbLengths = [.121,.134,.108];
-const clampAngle = (value: number) => THREE.MathUtils.clamp(Number.isFinite(value) ? value : 0, 0, 90);
-
 /** All dimensions use the arm's model units. Local +Z faces the palm. */
 export function createRoboticHand({angles, opposition = 0, preview = false, highlighted = false, holding = false}: HandModelProps) {
   const group = new THREE.Group();
@@ -92,35 +84,84 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
     else p.rotation.x = Math.PI/2;
   }
 
+  // A through-pin fixes the carrier to the forearm's transverse output boss.
+  // The bearing sits on its outboard cheek, directly over the middle of the palm.
   const mount = joint(group,"WristMount");
-  const palm = joint(group,"WristArticulation");
-  pin(mount,"frame",[0,.003,0],.091,.218,"z");
-  for (const side of [-1,1]) {
-    pin(mount,"accent",[0,.003,side*.109],.079,.018,"z");
-    pin(mount,"metal",[0,.003,side*.121],.053,.014,"z");
-    pin(mount,"inset",[0,.003,side*.130],.023,.004,"z",true);
+  const [pivotX,pivotY,pivotZ] = HAND_WRIST_PIVOT;
+  const rollPivot = joint(mount,"WristRotor",[pivotX,pivotY,pivotZ]);
+  const deviationPivot = joint(rollPivot,"WristGimbal");
+  const wristPivot = joint(deviationPivot,"WristArticulation");
+  const palm = joint(wristPivot,"PalmBody",[-pivotX,-pivotY,-pivotZ]);
+  function turned(parent: THREE.Group, finish: Finish, at: Point, section: Profile) {
+    const contour = section.map(([r,y]) => new THREE.Vector2(r,y));
+    mesh(parent,track(new THREE.LatheGeometry(contour,48)),finish,at);
   }
-  mesh(mount,track(new THREE.SphereGeometry(.082,20,12)),"metal",[0,-.012,0]);
-  const wrist = shield(palm,"frame",[0,-.075,-.064],.155,.185,.133);
-  wrist.rotation.x = .68;
-  shield(palm,"casing",[0,-.107,-.111],.184,.085,.123);
+
+  pin(mount,"metal",[0,0,0],.048,.201,"z");
+  pin(mount,"frame",[0,0,.092],.071,.014,"z");
+  pin(mount,"casing",[0,0,.103],.054,.010,"z");
+  pin(mount,"inset",[0,0,.111],.020,.007,"z",true);
+  mesh(mount,shape([
+    [-.069,.015],[-.057,.047],[-.035,.065],[.006,.069],[.041,.057],
+    [.063,.029],[.068,-.006],[.064,-.048],[.049,-.071],
+    [-.049,-.071],[-.065,-.040],
+  ],.026,.005),"frame",[0,0,-.105]);
+  pin(mount,"casing",[0,0,-.122],.054,.011,"z");
+  pin(mount,"metal",[0,0,-.131],.033,.009,"z");
+  pin(mount,"inset",[0,0,-.137],.013,.005,"z",true);
+
+  // Hollow machined profiles leave a running clearance between the housing and spindle.
+  const bearingRise = .020;
+  const axis: Point = [pivotX,pivotY+bearingRise,pivotZ];
+  const spindle: Point = [0,bearingRise,0];
+  turned(mount,"frame",axis,[[.048,.066],[.080,.066],[.085,.071],[.085,.091],[.076,.100],[.047,.100],[.045,.096],[.045,.069],[.048,.066]]);
+  turned(mount,"armor",axis,[[.077,.076],[.085,.076],[.086,.079],[.086,.088],[.082,.093],[.077,.093],[.077,.076]]);
+  turned(mount,"rubber",axis,[[.048,.062],[.078,.062],[.081,.065],[.081,.067],[.048,.067],[.048,.062]]);
+  turned(rollPivot,"metal",spindle,[[.022,.050],[.063,.050],[.070,.054],[.070,.059],[.044,.059],[.044,.089],[.023,.089],[.022,.050]]);
+  turned(rollPivot,"frame",spindle,[[.022,.044],[.060,.044],[.064,.047],[.064,.051],[.022,.051],[.022,.044]]);
+  // The orange index on the spindle passes the fixed witness mark once per revolution.
+  shield(mount,"inset",[pivotX,pivotY+bearingRise+.083,pivotZ-.086],.008,.013,.002);
+  shield(rollPivot,"accent",[0,bearingRise+.056,-.070],.017,.008,.003);
+
+  // The rotor fork carries the lateral axis. The cross carries the pitch axle through
+  // the pair of cheeks on the palm. The three axes intersect at the bearing centerline.
+  const forkEar: Profile = [[-.027,.068],[.027,.068],[.020,.016],[.018,-.006],
+    [.010,-.017],[-.007,-.019],[-.019,-.008],[-.020,.013]];
+  for (const side of [-1,1]) {
+    mesh(rollPivot,shape(forkEar,.012,.0025),"frame",[0,0,side*.047]);
+    pin(rollPivot,"metal",[0,0,side*.054],.016,.006,"z");
+    pin(rollPivot,"inset",[0,0,side*.058],.007,.0025,"z",true);
+  }
+  mesh(deviationPivot,track(new THREE.SphereGeometry(.023,20,12)),"metal",[0,0,0]);
+  pin(deviationPivot,"metal",[0,0,0],.011,.092,"z");
+  pin(deviationPivot,"frame",[0,0,0],.015,.113,"x");
+  const lug: Profile = [[-.016,.009],[-.007,.018],[.006,.019],[.017,.010],
+    [.017,-.022],[.026,-.056],[-.023,-.056],[-.015,-.023]];
+  for (const side of [-1,1]) {
+    const cheek = mesh(wristPivot,shape(lug,.012,.0025),"casing",[side*.055,0,0]);
+    cheek.rotation.y = Math.PI/2;
+    pin(wristPivot,"metal",[side*.062,0,0],.015,.006,"x");
+    pin(wristPivot,"inset",[side*.066,0,0],.007,.003,"x",true);
+  }
+  mesh(wristPivot,shape([[-.060,-.044],[.060,-.044],[.076,-.060],[.082,-.085],[-.077,-.085],[-.074,-.062]],.052,.004),
+    "frame",[0,0,-.004]);
   mesh(palm,shape([
-    [-.106,-.102],[.087,-.102],[.141,-.130],[.176,-.191],[.167,-.282],[.148,-.331],
-    [.072,-.354],[-.046,-.358],[-.138,-.339],[-.174,-.304],[-.18,-.225],[-.161,-.155],
+    [-.060,-.212],[.060,-.212],[.120,-.213],[.161,-.231],[.167,-.282],[.148,-.331],
+    [.072,-.354],[-.046,-.358],[-.138,-.339],[-.174,-.304],[-.172,-.251],[-.141,-.223],
   ],.087,.009),"frame",[0,0,-.152]);
   // Split dorsal armor and a recessed center spine leave the knuckle bearings exposed.
   mesh(palm,shape([
-    [-.105,-.119],[-.014,-.113],[-.014,-.262],[-.052,-.299],[-.141,-.302],
-    [-.158,-.278],[-.164,-.205],[-.145,-.154],
+    [-.103,-.223],[-.014,-.214],[-.014,-.262],[-.052,-.299],[-.141,-.302],
+    [-.158,-.278],[-.153,-.244],[-.135,-.230],
   ],.020,.006),"armor",[0,0,-.207]);
   mesh(palm,shape([
-    [.003,-.115],[.080,-.118],[.125,-.139],[.150,-.184],[.153,-.254],
+    [.003,-.213],[.073,-.213],[.111,-.223],[.144,-.238],[.153,-.254],
     [.132,-.294],[.054,-.302],[.003,-.260],
   ],.020,.006),"armor",[0,0,-.207]);
-  shield(palm,"accent",[-.005,-.199,-.210],.011,.119,.010);
+  shield(palm,"accent",[-.005,-.240,-.210],.008,.047,.007);
   for (const x of [-.127,.119]) {
-    pin(palm,"metal",[x,-.174,-.223],.015,.008,"z");
-    pin(palm,"inset",[x,-.174,-.229],.006,.003,"z",true);
+    pin(palm,"metal",[x,-.251,-.223],.015,.008,"z");
+    pin(palm,"inset",[x,-.251,-.229],.006,.003,"z",true);
   }
   for (const x of [-.086,.081]) {
     const slot = shield(palm,"inset",[x,-.275,-.225],.047,.007,.003);
@@ -128,13 +169,13 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
   }
   // The palmar pads form separate thenar and hypothenar contact surfaces.
   mesh(palm,shape([
-    [-.139,-.167],[-.099,-.144],[-.054,-.170],[-.033,-.231],[-.068,-.282],
-    [-.128,-.285],[-.153,-.249],
-  ],.017,.008),"rubber",[0,0,-.093]);
+    [-.139,-.242],[-.099,-.229],[-.054,-.230],[-.033,-.244],[-.068,-.282],
+    [-.128,-.285],[-.153,-.259],
+  ],.017,.006),"rubber",[0,0,-.102]);
   mesh(palm,shape([
-    [.067,-.147],[.123,-.151],[.152,-.196],[.127,-.246],[.074,-.278],
-    [.026,-.248],[.029,-.190],
-  ],.022,.008),"rubber",[0,0,-.091]);
+    [.067,-.225],[.119,-.228],[.148,-.239],[.127,-.253],[.074,-.278],
+    [.026,-.248],[.029,-.225],
+  ],.022,.006),"rubber",[0,0,-.102]);
   for (const data of fingers) {
     shield(palm,"casing",[data.x,data.y+.039,-.193],data.width*.90,.058,.047);
   }
@@ -168,6 +209,9 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
     return {data,finger,mcp,pip,dip,hinges:[mcp,pip,dip]};
   });
 
+  // A raised boss ties the thumb socket into the radial edge of the backplate.
+  mesh(palm,shape([[.087,-.226],[.119,-.205],[.141,-.196],[.153,-.200],
+    [.163,-.215],[.153,-.234],[.121,-.245],[.097,-.241]],.032,.0035),"frame",[0,0,-.092]);
   const thumb = joint(palm,"Thumb",[.153,-.211,-.064]);
   const cmc = joint(thumb,"ThumbCMC");
   const thumbMcp = joint(cmc,"ThumbMCP",[0,-thumbLengths[0],0]);
@@ -264,29 +308,18 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
 
   function update(values: HandAngles, thumbOpposition = 0, carriesCube = false) {
     for (const {data,finger,mcp,pip,dip} of digits) {
-      const command = clampAngle(values[data.key]);
-      // The index meets its thenar stop before the voluntary control reaches its end.
-      const stopped = data.key === "index" && command > 70 ? 70+8*(1-Math.exp(-(command-70)/8)) : command;
-      const t = (carriesCube ? command : stopped)/90;
-      finger.rotation.z = DEG*data.splay*(1-t*.76);
-      // Extended fingers brace the flat side of the cube; free fingers can fold to the palm.
-      const flex = carriesCube ? Math.min(t,data.cubeLimit) : Math.pow(t,1.4);
-      mcp.rotation.x = -DEG*flex*(carriesCube ? 6 : 72);
-      pip.rotation.x = -DEG*flex*(carriesCube ? 7 : 92);
-      dip.rotation.x = -DEG*flex*(carriesCube ? 10 : 61);
+      const angles = getFingerHinges(data,values[data.key],carriesCube);
+      finger.rotation.z = angles.splay;
+      mcp.rotation.x = angles.mcp;
+      pip.rotation.x = angles.pip;
+      dip.rotation.x = angles.dip;
     }
-    const flexion = clampAngle(values.thumb)/90;
-    const opposition = clampAngle(thumbOpposition)/90;
-    // CMC circumduction and pronation steer the entire ray of the thumb.
-    // MCP and IP flex only about each visible transverse hinge pin.
-    const azimuth = carriesCube ? 81.53 : 10+30*opposition;
-    const abduction = carriesCube ? 63.81 : 36+34*opposition+7.5*flexion;
-    const pronation = carriesCube ? -50.09 : -34-33*opposition;
-    cmcOrientation.setFromAxisAngle(yawAxis,-azimuth*DEG)
-      .multiply(turn.setFromAxisAngle(outwardAxis,abduction*DEG))
-      .multiply(turn.setFromAxisAngle(yawAxis,pronation*DEG));
-    thumbMcp.rotation.x = -DEG*(carriesCube ? 14.71 : 6+68.2*flexion);
-    ip.rotation.x = -DEG*(carriesCube ? 32.93 : 4+78.7*Math.sin(Math.PI*flexion/2));
+    const thumbAngles = getThumbHinges(values.thumb,thumbOpposition,carriesCube);
+    cmcOrientation.setFromAxisAngle(yawAxis,thumbAngles.yaw)
+      .multiply(turn.setFromAxisAngle(outwardAxis,thumbAngles.abduction))
+      .multiply(turn.setFromAxisAngle(yawAxis,thumbAngles.pronation));
+    thumbMcp.rotation.x = thumbAngles.mcp;
+    ip.rotation.x = thumbAngles.ip;
     setAbduction(0);
 
     if (!carriesCube) {
@@ -309,7 +342,12 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
   }
   update(angles,opposition,holding);
   return {
-    group, wristPivot: palm, update,
+    group, rollPivot, deviationPivot, wristPivot, update,
+    setWrist({roll,deviation,pitch}: WristAngles) {
+      rollPivot.rotation.y = roll*DEG;
+      deviationPivot.rotation.z = deviation*DEG;
+      wristPivot.rotation.x = -pitch*DEG;
+    },
     setHighlighted(enabled: boolean) {
       for (const material of Object.values(palette)) {
         material.emissive.set(enabled ? "#196544" : "#000000");

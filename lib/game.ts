@@ -1,4 +1,7 @@
+import { handArmClearance } from './wristClearance.ts';
+
 export type Vec3 = [number, number, number];
+export const HAND_WRIST_PIVOT: Vec3 = [0, -.155, -.145];
 export type RobotMode = 'gripper' | 'hand';
 export const FINGERS = ['thumb', 'index', 'middle', 'ring', 'little'] as const;
 export type Finger = typeof FINGERS[number];
@@ -16,7 +19,7 @@ export type Joints = Record<Joint, number>;
 export type WristAxis = 'pitch' | 'deviation' | 'roll';
 export type WristAngles = Record<WristAxis, number>;
 export const WRIST_LIMITS: Record<WristAxis, { min: number; max: number }> = {
-  pitch: { min: -65, max: 75 }, deviation: { min: -30, max: 20 }, roll: { min: -90, max: 90 },
+  pitch: { min: -65, max: 75 }, deviation: { min: -30, max: 20 }, roll: { min: 0, max: 360 },
 };
 export const NEUTRAL_WRIST: WristAngles = { pitch: 0, deviation: 0, roll: 0 };
 export type Quaternion = [number, number, number, number];
@@ -75,7 +78,7 @@ function product(a: Quaternion, b: Quaternion): Quaternion {
 
 function inverse([x,y,z,w]: Quaternion): Quaternion { return [-x,-y,-z,w]; }
 
-// Ry(baseYaw + roll) × Rz(deviation) × Rx(-pitch), centered on the hand's mounting pin.
+// Ry(baseYaw + roll) × Rz(deviation) × Rx(-pitch), about the rotary bearing below the mounting socket.
 export function wristQuaternion(wrist: WristAngles, baseYaw = 0): Quaternion {
   const x = -wrist.pitch*DEG/2, y = (baseYaw + wrist.roll)*DEG/2, z = wrist.deviation*DEG/2;
   return product(product([0, Math.sin(y), 0, Math.cos(y)], [0, 0, Math.sin(z), Math.cos(z)]),
@@ -101,10 +104,15 @@ export function getPose(joints: Joints, mode: RobotMode = 'gripper', wristAngles
   const radius = upperRadius + 1.10 * Math.cos(lowerAngle);
   const height = upperHeight + 1.10 * Math.sin(lowerAngle);
   const wrist = rotatedPoint(yaw, radius, height);
-  const orientation = wristQuaternion(mode === 'hand' ? wristAngles : NEUTRAL_WRIST, joints.yaw);
+  const hand = mode === 'hand';
+  const orientation = wristQuaternion(hand ? wristAngles : NEUTRAL_WRIST, joints.yaw);
+  // The fixed housing ends at this bearing. The fingers and grasp point rotate below it.
+  const pivot = hand ? add(wrist, rotateVector(HAND_WRIST_PIVOT, wristQuaternion(NEUTRAL_WRIST, joints.yaw))) : wrist;
+  const neutralGrip: Vec3 = [0,-GRIP_DEPTH[mode],0];
+  const gripOffset = hand ? difference(neutralGrip,HAND_WRIST_PIVOT) : neutralGrip;
   return {
-    elbow: rotatedPoint(yaw, upperRadius, upperHeight), wrist, orientation,
-    grip: add(wrist, rotateVector([0,-GRIP_DEPTH[mode],0], orientation)),
+    elbow: rotatedPoint(yaw, upperRadius, upperHeight), wrist, pivot, orientation,
+    grip: add(pivot, rotateVector(gripOffset, orientation)),
   };
 }
 
@@ -222,17 +230,31 @@ function jointHint(state: GameState, joints: Joints) {
 
 // Outer contact points of the wrist, palm, extended digits and thumb in the hand's local frame.
 // Include both faces and poses so opening a finger cannot push it through the tabletop.
-const handEnvelope: Vec3[] = [
+const neutralHandEnvelope: Vec3[] = [
   [0,0,-.14], [0,0,.14], [-.18,-.35,-.24], [.18,-.35,-.24],
   [-.18,-.35,.12], [.18,-.35,.12], [-.17,-.59,-.24], [.16,-.65,-.24],
   [-.077,-.66,-.24], [-.077,-.66,-.21], [.05,-.686,-.24], [-.14,-.58,.10], [.13,-.60,.12],
+  // Mid-curl fingertip pads can reach the table before the fully extended hand.
+  [.033,-.676,-.118], [.066,-.684,-.158], [.029,-.688,-.193], [.067,-.687,-.219],
+  [-.073,-.656,-.161],
   [.51,-.50,.14], [.20,-.52,.21],
 ];
+const handEnvelope = neutralHandEnvelope.map(point => difference(point, HAND_WRIST_PIVOT));
+
+// Keep the two endpoints of the position slider available (0 and 360).
+// A relative turn may pass either of them, so wrap its accepted end position.
+function wrapRoll(degrees: number) {
+  return ((degrees % 360) + 360) % 360;
+}
 
 function carriedCube(cube: Cube, pose: ToolPose, yaw: number): Cube {
   if (cube.mode !== 'held') return cube;
   if (cube.handContact) {
     const orientation = product(pose.orientation, cube.handContact.orientation);
+    // q and -q describe the same attitude. Retain the nearest sign across the dial seam.
+    if (orientation.reduce((dot, value, i) => dot + value * cube.orientation[i], 0) < 0) {
+      for (let i = 0; i < 4; i++) orientation[i] = -orientation[i];
+    }
     const heading = rotateVector([1,0,0], orientation);
     return { ...cube, position: add(pose.grip, rotateVector(cube.handContact.offset, pose.orientation)),
       orientation, yaw: Math.atan2(-heading[2], heading[0])/DEG };
@@ -247,22 +269,33 @@ function toolClearance(count: number, hand: boolean, pose: ToolPose) {
   if (count < 6) return clearance;
   if (!hand) return Math.min(clearance, pose.grip[1] - .075);
   for (const point of handEnvelope) {
-    clearance = Math.min(clearance, pose.wrist[1] + rotateVector(point,pose.orientation)[1]);
+    clearance = Math.min(clearance, pose.pivot[1] + rotateVector(point,pose.orientation)[1]);
   }
   return clearance;
 }
 
-function movePose(state: GameState, targetJoints: Joints, targetWrist: WristAngles, highlight: Joint | 'wrist'): GameState {
+function armClearanceFor(state: GameState, joints = state.joints, wrist = state.wrist) {
+  return handArmClearance(joints,wrist,HAND_WRIST_PIVOT,state.fingers,state.opposition,state.cube.mode === 'held');
+}
+
+function movesIntoArm(clearance: number, previous: number) {
+  return clearance < -1e-8 && clearance < previous - 1e-8;
+}
+
+function movePose(state: GameState, targetJoints: Joints, targetWrist: WristAngles, highlight: Joint | 'wrist',
+  rollTravel = targetWrist.roll - state.wrist.roll): GameState {
   const maxDelta = Math.max(
     Math.abs(targetJoints.yaw - state.joints.yaw), Math.abs(targetJoints.shoulder - state.joints.shoulder),
     Math.abs(targetJoints.elbow - state.joints.elbow), Math.abs(targetWrist.pitch - state.wrist.pitch),
-    Math.abs(targetWrist.deviation - state.wrist.deviation), Math.abs(targetWrist.roll - state.wrist.roll),
+    Math.abs(targetWrist.deviation - state.wrist.deviation), Math.abs(rollTravel),
   );
   const steps = Math.max(1,Math.ceil(maxDelta));
   let joints = state.joints;
   let wrist = state.wrist;
   let cube = state.cube;
-  let blocked = false;
+  const hasHand = handInstalled(state);
+  let previousArmClearance = hasHand ? armClearanceFor(state) : Infinity;
+  let blockedHint: string | undefined;
   // Check each degree, including a simultaneous return of all three wrist axes to neutral.
   for (let i=1;i<=steps;i++) {
     const at = (from: number, to: number) => i === steps ? to : from+(to-from)*i/steps;
@@ -272,10 +305,10 @@ function movePose(state: GameState, targetJoints: Joints, targetWrist: WristAngl
     };
     const nextWrist = targetWrist === state.wrist ? state.wrist : {
       pitch: at(state.wrist.pitch,targetWrist.pitch), deviation: at(state.wrist.deviation,targetWrist.deviation),
-      roll: at(state.wrist.roll,targetWrist.roll),
+      roll: i === steps ? targetWrist.roll : wrapRoll(state.wrist.roll + rollTravel * i / steps),
     };
     const pose = getPose(nextJoints,state.robotMode,nextWrist);
-    const moved = carriedCube(state.cube,pose,nextJoints.yaw);
+    const moved = carriedCube(cube,pose,nextJoints.yaw);
     const hand = state.robotMode === 'hand';
     let clearance = toolClearance(state.count, hand, pose);
     if (moved.mode === 'held') {
@@ -284,16 +317,25 @@ function movePose(state: GameState, targetJoints: Joints, targetWrist: WristAngl
       clearance = Math.min(clearance, centerHeight - landingHeight(moved));
     }
     if (clearance < -1e-8) {
-      blocked = true;
+      blockedHint = hand ? 'Angkat lengan agar tangan dan kubus bebas dari permukaan.' :
+        'Angkat lengan sedikit agar capit melewati permukaan.';
       break;
+    }
+    if (hasHand) {
+      const armClearance = armClearanceFor(state,nextJoints,nextWrist);
+      // Existing poses can move away from contact, or rotate the entire assembly together.
+      if (movesIntoArm(armClearance,previousArmClearance)) {
+        blockedHint = 'Tangan menyentuh lengan bawah. Kurangi tekukan pergelangan atau ubah sudut siku.';
+        break;
+      }
+      previousArmClearance = armClearance;
     }
     joints = nextJoints;
     wrist = nextWrist;
     cube = moved;
   }
   const next = { ...state, joints, wrist, cube, highlight };
-  return { ...next, hint: blocked ? (state.robotMode === 'hand' ? 'Angkat lengan agar tangan dan kubus bebas dari permukaan.' :
-    'Angkat lengan sedikit agar capit melewati permukaan.') : jointHint(next,joints) };
+  return { ...next, hint: blockedHint ?? jointHint(next,joints) };
 }
 
 function moveJoint(state: GameState, key: Joint, value: number) {
@@ -332,7 +374,7 @@ function fingersOppose(fingers: FingerAngles, opposition: number) {
   return opposition >= 48 && fingers.thumb >= 52 && supportsThumb;
 }
 
-function poseHand(state: GameState, fingers: FingerAngles, opposition: number): GameState {
+function nextHandPose(state: GameState, fingers: FingerAngles, opposition: number): GameState {
   if (state.robotMode !== 'hand' || state.count !== HAND_PARTS.length) return state;
   const next = { ...state, fingers, opposition, highlight: 'grip' as const };
   const closed = fingersOppose(fingers, opposition);
@@ -352,6 +394,31 @@ function poseHand(state: GameState, fingers: FingerAngles, opposition: number): 
   return { ...next, hint: jointHint(next, state.joints) };
 }
 
+function poseHand(state: GameState, fingers: FingerAngles, opposition: number): GameState {
+  const target = nextHandPose(state,fingers,opposition);
+  if (target === state) return state;
+  const holding = target.cube.mode === 'held';
+  // Free gestures animate along these joint angles. Contact switches directly to the cube-bracing pose.
+  const distance = Math.max(Math.abs(opposition-state.opposition), ...FINGERS.map(key => Math.abs(fingers[key]-state.fingers[key])));
+  const steps = holding || state.cube.mode === 'held' ? 1 : Math.max(1,Math.ceil(distance));
+  let previous = armClearanceFor(state);
+  for (let i=1;i<=steps;i++) {
+    const t = i/steps;
+    let sample = fingers;
+    if (i < steps) {
+      sample = { ...state.fingers };
+      for (const key of FINGERS) sample[key] += (fingers[key]-sample[key])*t;
+    }
+    const thumb = state.opposition + (opposition-state.opposition)*t;
+    const clearance = handArmClearance(state.joints,state.wrist,HAND_WRIST_PIVOT,sample,thumb,holding);
+    if (movesIntoArm(clearance,previous)) {
+      return { ...state, highlight: 'grip', hint: 'Gerak jari terhalang lengan bawah. Luruskan pergelangan atau ubah sudut siku.' };
+    }
+    previous = clearance;
+  }
+  return target;
+}
+
 function applyHandPreset(state: GameState, preset: HandPreset) {
   const pose = HAND_PRESETS[preset];
   return poseHand(state, { ...pose.fingers }, pose.opposition);
@@ -366,6 +433,7 @@ export type Action =
   | { type: 'place'; distance: number; partIndex?: number }
   | { type: 'joint'; key: Joint; value: number }
   | { type: 'wrist'; key: WristAxis; value: number }
+  | { type: 'turnWrist'; delta: number }
   | { type: 'tick'; dt: number }
   | { type: 'tryHand' | 'resetWrist' | 'rotate' | 'undo' | 'open' | 'close' | 'resetCube' | 'restart' };
 
@@ -391,8 +459,18 @@ export function gameReducer(state: GameState, action: Action): GameState {
       return movePose(state, state.joints, { ...state.wrist,
         [action.key]: Math.max(limit.min,Math.min(limit.max,action.value)) }, 'wrist');
     }
-    case 'resetWrist':
-      return handInstalled(state) ? movePose(state,state.joints,{ ...NEUTRAL_WRIST },'wrist') : state;
+    case 'turnWrist': {
+      if (!handInstalled(state) || !Number.isFinite(action.delta) || action.delta === 0) return state;
+      // A complete revolution checks every possible contact. Further turns repeat that path.
+      const travel = Math.abs(action.delta) < 360 ? action.delta : Math.sign(action.delta) * 360 + action.delta % 360;
+      const roll = wrapRoll(state.wrist.roll + travel);
+      return movePose(state, state.joints, { ...state.wrist, roll }, 'wrist', travel);
+    }
+    case 'resetWrist': {
+      if (!handInstalled(state)) return state;
+      const travel = state.wrist.roll > 180 ? 360 - state.wrist.roll : -state.wrist.roll;
+      return movePose(state, state.joints, { ...NEUTRAL_WRIST }, 'wrist', travel);
+    }
     case 'finger':
       if (!FINGERS.includes(action.key) || !Number.isFinite(action.value)) return state;
       return poseHand(state, { ...state.fingers, [action.key]: Math.max(0, Math.min(90, action.value)) }, state.opposition);
@@ -423,6 +501,10 @@ export function gameReducer(state: GameState, action: Action): GameState {
       const count = state.count + 1;
       if (count >= 5) {
         const pose = getPose(state.joints, state.robotMode);
+        if (count === HAND_PARTS.length && state.robotMode === 'hand' &&
+          armClearanceFor(state,state.joints,NEUTRAL_WRIST) < -1e-8) {
+          return { ...state, hint: 'Di Uji gerak, ubah sudut siku atau bahu agar tangan tidak menyentuh lengan bawah. Lalu pasang kembali.' };
+        }
         if (toolClearance(count,state.robotMode === 'hand',pose) < 0) {
           return { ...state, hint: 'Di Uji gerak, naikkan Sudut bahu agar komponen muat di atas meja. Kembali ke Perakitan untuk memasangnya.' };
         }
