@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createReadStream, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
+import { createGzip } from "node:zlib";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +16,8 @@ const types = {
   ".glb": "model/gltf-binary", ".webp": "image/webp", ".png": "image/png",
   ".woff2": "font/woff2", ".ico": "image/x-icon"
 };
+const immutable = /^\/(_next\/static|models|fonts|parts)\//;
+const compressible = new Set([".html", ".css", ".js", ".json", ".txt", ".svg", ".glb"]);
 if (!existsSync(resolve(root, "index.html"))) {
   console.error("Jalankan npm run build terlebih dahulu.");
   process.exit(1);
@@ -31,9 +34,15 @@ createServer(async (req, res) => {
     if ((await stat(file)).isDirectory()) file = resolve(file, "index.html");
     const info = await stat(file);
     if (!info.isFile()) { res.writeHead(404).end(); return; }
-    res.writeHead(200, { "Content-Type": types[extname(file)] || "application/octet-stream",
-      "Content-Length": info.size, "X-Content-Type-Options": "nosniff" });
-    if (req.method === "HEAD") res.end();
-    else createReadStream(file).on("error", () => res.destroy()).pipe(res);
+    const ext = extname(file);
+    const headers = { "Content-Type": types[ext] || "application/octet-stream", "X-Content-Type-Options": "nosniff",
+      "Cache-Control": immutable.test(pathname) ? "public, max-age=31536000, immutable" : "no-cache", "Vary": "Accept-Encoding" };
+    // Teks, SVG, dan model 3D dikirim terkompresi; font sudah terkompresi.
+    const gzip = compressible.has(ext) && info.size > 1024 && /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""));
+    if (gzip) headers["Content-Encoding"] = "gzip"; else headers["Content-Length"] = info.size;
+    res.writeHead(200, headers);
+    if (req.method === "HEAD") { res.end(); return; }
+    const stream = createReadStream(file).on("error", () => res.destroy());
+    if (gzip) stream.pipe(createGzip({ level: 6 })).pipe(res); else stream.pipe(res);
   } catch { res.writeHead(404).end(); }
 }).listen(port, host, () => console.log(`Rakitron siap di http://${host}:${port}`));

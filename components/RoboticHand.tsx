@@ -5,6 +5,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import type { RefObject } from "react";
 import type { Group } from "three";
 import { FINGERS } from "../lib/game";
+import { noteMotion } from "./idle";
 import { createRoboticHand, type HandAngles, type HandModelProps } from "../lib/handModel";
 
 export { createRoboticHand } from "../lib/handModel";
@@ -74,6 +75,7 @@ export default function RoboticHand({ angles, opposition = 0, preview = false, h
   useFrame((_, dt) => {
     const move = transition.current;
     if (!move) return;
+    noteMotion();
     move.elapsed += Math.min(dt, .05);
     const progress = Math.min(1, move.elapsed / move.duration);
     const eased = progress * progress * (3 - 2 * progress);

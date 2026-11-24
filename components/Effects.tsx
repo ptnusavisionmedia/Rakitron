@@ -5,15 +5,13 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { TRAY, type Vec3 } from "../lib/game";
 import type { Bus, GameEvent } from "../lib/gameEvents";
+import { prefersReducedMotion } from "./idle";
 
 export type FxKind = "sparkle" | "pop" | "confetti" | "dust" | "tink";
 export type FxApi = { burst(kind: FxKind, pos: Vec3 | THREE.Vector3, delay?: number): void };
 export const FxContext = createContext<FxApi | null>(null);
 export const useFx = () => useContext(FxContext);
 
-export function prefersReducedMotion() {
-  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
 
 const MAX = 420;
 const RINGS = 4;
@@ -64,7 +62,7 @@ export function Effects({ bus, slotPos, children }: { bus: Bus; slotPos: (index:
     size: new Float32Array(MAX), alpha: new Float32Array(MAX), shape: new Float32Array(MAX), color: new Float32Array(MAX * 3),
     pending: [] as Pending[],
     rings: Array.from({ length: RINGS }, () => ({ t: 1, color: new THREE.Color() })),
-    nextRing: 0, cursor: 0, scale: 1,
+    nextRing: 0, cursor: 0, scale: 1, active: false,
   }), []);
   const geometry = useMemo(() => {
     const g = new THREE.BufferGeometry();
@@ -142,6 +140,8 @@ export function Effects({ bus, slotPos, children }: { bus: Bus; slotPos: (index:
   }), [bus, api, slotPos]);
 
   useFrame((_, rawDt) => {
+    // Tanpa partikel atau gelombang aktif tidak ada yang dihitung atau diunggah ke GPU.
+    if (!state.pending.length && !state.active && state.rings.every(ring => ring.t >= 1)) return;
     const dt = Math.min(rawDt, .05);
     state.scale = gl.domElement.height / (2 * Math.tan((((camera as THREE.PerspectiveCamera).fov ?? 34) * Math.PI) / 360));
     material.uniforms.uScale.value = state.scale;
@@ -155,6 +155,7 @@ export function Effects({ bus, slotPos, children }: { bus: Bus; slotPos: (index:
       if (state.life[i] <= 0) { state.alpha[i] = 0; continue; }
       state.life[i] -= dt;
       alive = true;
+      if (state.life[i] <= 0) state.alpha[i] = 0;
       const f = Math.max(0, state.life[i] / state.maxLife[i]);
       const damp = Math.max(0, 1 - state.drag[i] * dt);
       const v = i * 3;
@@ -183,6 +184,7 @@ export function Effects({ bus, slotPos, children }: { bus: Bus; slotPos: (index:
     (geometry.attributes.aAlpha as THREE.BufferAttribute).needsUpdate = true;
     (geometry.attributes.aShape as THREE.BufferAttribute).needsUpdate = true;
     (geometry.attributes.aColor as THREE.BufferAttribute).needsUpdate = true;
+    state.active = alive;
     if (alive) invalidate();
   });
 

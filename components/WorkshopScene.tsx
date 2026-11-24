@@ -12,7 +12,8 @@ import type { Game } from "../lib/useGame";
 import { SNAP_DISTANCE, TRAY, wristQuaternion } from "../lib/game";
 import { PLACE_LAND, createBus, type Bus } from "../lib/gameEvents";
 import RoboticHand from "./RoboticHand";
-import { Effects, prefersReducedMotion, useFx } from "./Effects";
+import { Effects, useFx } from "./Effects";
+import { noteMotion, prefersReducedMotion, setSceneVisible, shadowsNeedUpdate, useIdleInvalidate } from "./idle";
 import WorkshopTable from "./WorkshopTable";
 import { ReceiverTray, Ring, WoodenCube } from "./SceneObjects";
 
@@ -267,6 +268,7 @@ function SeatedPart({ children, index, forearmAngle }: { children:ReactNode; ind
   useFrame((_,dt) => {
     const group = ref.current;
     if (!group || elapsed.current >= SETTLE) return;
+    noteMotion();
     elapsed.current = Math.min(SETTLE,elapsed.current + Math.min(dt,.04));
     const t = elapsed.current;
     const approach = Math.min(1,t / PLACE_LAND);
@@ -290,6 +292,7 @@ function Locator({ active, onClick, index, forearmAngle }: { active: boolean; on
   const pulse = useRef(0);
   const clock = useRef(0);
   const invalidate = useThree(s => s.invalidate);
+  const idle = useIdleInvalidate();
   const axis = useMemo(() => insertionAxis(index,forearmAngle),[index,forearmAngle]);
   const aim = useMemo(() => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),axis.clone().negate()),[axis]);
   useLayoutEffect(() => {
@@ -300,7 +303,7 @@ function Locator({ active, onClick, index, forearmAngle }: { active: boolean; on
   // Cincin bernapas dan panah memantul agar anak tahu ke mana komponen harus dibawa.
   useFrame((_,dt) => {
     if (prefersReducedMotion()) return;
-    const step = Math.min(dt,.04);
+    const step = Math.min(dt,.1);
     clock.current += step;
     pulse.current = Math.max(0,pulse.current - step);
     if (marker.current) {
@@ -308,7 +311,7 @@ function Locator({ active, onClick, index, forearmAngle }: { active: boolean; on
       marker.current.scale.setScalar(1 + press + Math.sin(clock.current*3.2)*.045);
     }
     arrow.current?.position.copy(axis).multiplyScalar(.5 + (Math.sin(clock.current*5)+1)*.05);
-    invalidate();
+    idle();
   });
   return <group onClick={onClick} userData={{ assemblySocket: true }}>
     <group ref={marker}>
@@ -330,24 +333,24 @@ function Locator({ active, onClick, index, forearmAngle }: { active: boolean; on
 function Pulse({ children, active }: { children:ReactNode; active:boolean }) {
   const ref = useRef<THREE.Group>(null);
   const clock = useRef(0);
-  const invalidate = useThree(s => s.invalidate);
+  const idle = useIdleInvalidate();
   useFrame((_,dt) => {
     if (!ref.current || !active || prefersReducedMotion()) return;
-    clock.current += Math.min(dt,.04);
+    clock.current += Math.min(dt,.1);
     ref.current.scale.setScalar(1 + Math.sin(clock.current*4)*.035);
-    invalidate();
+    idle();
   });
   return <group ref={ref}>{children}</group>;
 }
 function PulseRing({ radius, color }: { radius:number; color:string }) {
   const material = useRef<THREE.MeshBasicMaterial>(null);
   const clock = useRef(0);
-  const invalidate = useThree(s => s.invalidate);
+  const idle = useIdleInvalidate();
   useFrame((_,dt) => {
     if (!material.current || prefersReducedMotion()) return;
-    clock.current += Math.min(dt,.04);
+    clock.current += Math.min(dt,.1);
     material.current.opacity = .35 + (Math.sin(clock.current*4)+1)*.28;
-    invalidate();
+    idle();
   });
   return <mesh rotation-x={-Math.PI/2}>
     <ringGeometry args={[radius-.012,radius+.012,64]} />
@@ -507,6 +510,7 @@ function LooseParts({ models,game,socket,lock,controls,inspecting,bus }: {
       const part = slots.current[index];
       if (!part) return;
       moved = index;
+      noteMotion();
       const near = point.distanceTo(anchor) <= SNAP_DISTANCE;
       if (near && !snapped) bus.emit({ type:"magnet", pos:[anchor.x,anchor.y,anchor.z] });
       snapped = near;
@@ -557,6 +561,7 @@ function LooseParts({ models,game,socket,lock,controls,inspecting,bus }: {
   // Either the pointer or the part's input pivot may be aligned with the socket.
   // Long links can be grabbed anywhere along their length.
   const dragPosition = (g:Gesture,ray:THREE.Ray) => {
+    noteMotion();
     const target = socket.current;
     const part = slots.current[g.index];
     if (!part || !target) return Infinity;
@@ -617,6 +622,7 @@ function LooseParts({ models,game,socket,lock,controls,inspecting,bus }: {
 
 function Workbench({ game,view="perspective",cameraReset=0,socketFocus=0,zoom=0,bus:given,onReady }: WorkshopSceneProps) {
   const bus = useMemo(() => given ?? createBus(),[given]);
+  useLayoutEffect(() => { noteMotion(); }); // setiap perubahan status (sendi, kubus jatuh, pilihan) menggerakkan bayangan
   const asset = useLoader(GLTFLoader,"/models/rakitron-arm.glb");
   const models = useMemo(() => NAMES.map(name => {
     const part = asset.scene.getObjectByName(name);
@@ -673,13 +679,46 @@ class SceneBoundary extends Component<{children:ReactNode; retry:()=>void},{fail
   render() { return this.state.failed ? <Unavailable retry={this.props.retry}/> : this.props.children; }
 }
 
+// Resolusi turun bertahap (1.6 -> 1.25 -> 1) bila pengiriman frame terus lambat, agar gerakan tetap mulus.
+const DPR_LEVELS = [1.6,1.25,1];
+function AdaptiveQuality({ onSlow }: { onSlow:()=>void }) {
+  const sample = useRef({ n:0, total:0, strikes:0, warm:0 });
+  // Prioritas 1 mengambil alih render sehingga biaya satu frame dapat diukur.
+  useFrame(({ gl,scene,camera }) => {
+    gl.shadowMap.autoUpdate = false;
+    gl.shadowMap.needsUpdate = shadowsNeedUpdate();
+    const start = performance.now();
+    gl.render(scene,camera);
+    const s = sample.current;
+    if (s.warm < 45) { s.warm++; return; } // compile shader dan unggah tekstur tidak dihitung
+    s.total += performance.now() - start;
+    if (++s.n < 30) return;
+    s.strikes = s.total / s.n > 13 ? s.strikes + 1 : 0;
+    s.n = 0; s.total = 0;
+    if (s.strikes >= 2) { s.strikes = 0; onSlow(); }
+  },1);
+  return null;
+}
+
 export default function WorkshopScene(props:WorkshopSceneProps) {
   const [version,setVersion] = useState(0);
-  return <div style={{position:"absolute",inset:0,touchAction:"none"}} aria-label="Meja perakitan lengan robot tiga dimensi">
+  const [level,setLevel] = useState(0);
+  const wrapper = useRef<HTMLDivElement>(null);
+  // Adegan yang tergulir keluar layar berhenti menggambar sama sekali.
+  useEffect(() => {
+    const node = wrapper.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => setSceneVisible(entry.isIntersecting));
+    observer.observe(node);
+    return () => { observer.disconnect(); setSceneVisible(true); };
+  },[]);
+  const slower = useCallback(() => setLevel(l => Math.min(DPR_LEVELS.length-1,l+1)),[]);
+  return <div ref={wrapper} style={{position:"absolute",inset:0,touchAction:"none"}} aria-label="Meja perakitan lengan robot tiga dimensi">
     <SceneBoundary key={version} retry={() => setVersion(x => x+1)}>
-      <Canvas frameloop="demand" shadows={SHADOWS} dpr={[1,1.6]}
+      <Canvas frameloop="demand" shadows={SHADOWS} dpr={Math.min(DPR_LEVELS[level],typeof window === "undefined" ? 1 : window.devicePixelRatio)}
         gl={RENDERER} camera={CAMERA}
         fallback={<Unavailable />} style={{width:"100%",height:"100%",touchAction:"none"}}>
+        <AdaptiveQuality onSlow={slower} />
         <Suspense fallback={null}><Workbench {...props} /></Suspense>
       </Canvas>
     </SceneBoundary>

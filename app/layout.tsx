@@ -9,5 +9,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f8f7f2" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="id"><body>{children}</body></html>;
+  return <html lang="id">
+    <head>
+      {/* Unduhan model 3D dan font dimulai bersamaan dengan JavaScript, bukan menunggu adegan siap. */}
+      <link rel="preload" href="/models/rakitron-arm.glb" as="fetch" crossOrigin="anonymous" />
+      <link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+    </head>
+    <body>{children}</body>
+  </html>;
 }
