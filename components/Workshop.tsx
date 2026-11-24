@@ -6,7 +6,7 @@ import {
   ArrowDownToLine, ArrowRight, BookOpen, Box, Boxes, Check,
   CircleHelp, Crosshair, Expand, Focus, Grab, Hand,
   Layers3, Minus, MousePointer2, Orbit, Plus, RotateCcw,
-  RotateCw, SlidersHorizontal, Undo2, Volume2, VolumeX, Wrench, X, Music, Music2,
+  RotateCw, SlidersHorizontal, Sparkles, Square, Undo2, Volume2, VolumeX, Wrench, X, Music, Music2,
 } from "lucide-react";
 import { JOINT_LIMITS, partsFor, turnsToAlign, type RobotMode } from "../lib/game";
 import { PLACE_LAND, createBus, useGameEvents } from "../lib/gameEvents";
@@ -24,7 +24,7 @@ const WorkshopScene = dynamic(() => import("./WorkshopScene"), {
 });
 
 type View = "perspective" | "front" | "top";
-type Pane = "parts" | "assembly" | "motion";
+type Pane = "parts" | "assembly" | "motion" | "auto";
 const HAND_ASSET_VERSION = "?v=centered-wrist";
 
 type DialogType = "help" | "reference" | "restart" | null;
@@ -60,29 +60,30 @@ function Dialog({ kind, onClose, children }: { kind: DialogType; onClose: () => 
   </dialog>;
 }
 
+function RunningBanner({ player }: { player: MotionPlayer }) {
+  if (!player.status) return null;
+  return <button type="button" className="auto-banner" onClick={() => player.stop()}>
+    <span><b>{player.status.name}</b> sedang berjalan</span><i><Square size={11}/>Hentikan</i>
+  </button>;
+}
+
 function MotionPanel({ game, active, player }: { game: Game; active: boolean; player: MotionPlayer }) {
-  const [section, setSection] = useState<"fingers" | "wrist" | "arm" | "auto">("fingers");
-  const ready = game.count === 6;
-  const handReady = game.robotMode === "hand" && ready;
-  const showAuto = ready && section === "auto";
+  const [section, setSection] = useState<"fingers" | "wrist" | "arm">("fingers");
+  const handReady = game.robotMode === "hand" && game.count === 6;
   const showFingers = handReady && section === "fingers";
   const showWrist = handReady && section === "wrist";
-  const running = player.status !== null;
   return <div className="motion-pane">
     <div className="motion-intro"><div className="step-kicker">{handReady ? "Tangan lima jari" : game.count === 6 ? "Misi pemindahan" : "Uji rakitan"}</div>
-      <h3>{showAuto ? "Gerak otomatis" : game.won ? "Kubus berhasil dipindah!" : showWrist ? "Gerakkan pergelangan" : showFingers ? "Gerakkan jari" : game.count === 6 ? "Pindahkan kubus" : "Gerakkan sendi"}</h3>
-      <p>{showAuto ? "Pilih program, lalu robot bergerak sendiri. Tekan lagi untuk menghentikan." : game.won ? "Coba lagi dari posisi awal jika kamu mau." : showWrist ? "Pilih sudut telapak atau putar satu putaran penuh." : showFingers ? "Pilih gestur atau atur tekukan setiap jari." : handReady ? "Arahkan telapak ke kubus, lalu pilih Genggam di kontrol Jari." : game.count === 6 ? "Jepit kubus, angkat, lalu lepaskan di dalam baki." : "Coba setiap sendi begitu komponennya terpasang."}</p>
+      <h3>{game.won ? "Kubus berhasil dipindah!" : showWrist ? "Gerakkan pergelangan" : showFingers ? "Gerakkan jari" : game.count === 6 ? "Pindahkan kubus" : "Gerakkan sendi"}</h3>
+      <p>{game.won ? "Coba lagi dari posisi awal jika kamu mau." : showWrist ? "Pilih sudut telapak atau putar satu putaran penuh." : showFingers ? "Pilih gestur atau atur tekukan setiap jari." : handReady ? "Arahkan telapak ke kubus, lalu pilih Genggam di kontrol Jari." : game.count === 6 ? "Jepit kubus, angkat, lalu lepaskan di dalam baki." : "Coba setiap sendi begitu komponennya terpasang."}</p>
     </div>
-    {ready && <div className={`motion-sections ${handReady ? "four" : ""}`} role="group" aria-label="Bagian yang digerakkan">
-      {handReady && <button type="button" aria-pressed={showFingers} onClick={() => setSection("fingers")}>Jari</button>}
-      {handReady && <button type="button" aria-pressed={showWrist} onClick={() => setSection("wrist")}>Pergelangan</button>}
-      <button type="button" aria-pressed={!showAuto && !showFingers && !showWrist} onClick={() => setSection("arm")}>Lengan</button>
-      <button type="button" className={running ? "running" : ""} aria-pressed={showAuto} onClick={() => setSection("auto")}>Otomatis</button>
+    <RunningBanner player={player}/>
+    {handReady && <div className="motion-sections" role="group" aria-label="Bagian yang digerakkan">
+      <button type="button" aria-pressed={section === "fingers"} onClick={() => setSection("fingers")}>Jari</button>
+      <button type="button" aria-pressed={section === "wrist"} onClick={() => setSection("wrist")}>Pergelangan</button>
+      <button type="button" aria-pressed={section === "arm"} onClick={() => setSection("arm")}>Lengan</button>
     </div>}
-    {running && !showAuto && <button type="button" className="auto-banner" onClick={() => player.stop()}>
-      <span><b>{player.status!.name}</b> sedang berjalan</span><i>Hentikan</i>
-    </button>}
-    {showAuto ? <AutoControls game={game} player={player}/> : showFingers ? <HandControls game={game}/> : showWrist ? <WristControls game={game} active={active}/> : <div className="joint-controls">
+    {showFingers ? <HandControls game={game}/> : showWrist ? <WristControls game={game} active={active}/> : <div className="joint-controls">
       {joints.map(({ key, title }) => {
         const limit = JOINT_LIMITS[key];
         const enabled = game.count >= limit.requires;
@@ -93,7 +94,7 @@ function MotionPanel({ game, active, player }: { game: Game; active: boolean; pl
         </label>;
       })}
     </div>}
-    {game.robotMode === "gripper" && !showAuto && <div className={`grip-controls ${game.highlight === "grip" ? "hinted" : ""}`}>
+    {game.robotMode === "gripper" && <div className={`grip-controls ${game.highlight === "grip" ? "hinted" : ""}`}>
       <span>Capit</span><div>
         <button disabled={game.count < 6} onClick={() => game.open()}><Hand size={14}/> Buka</button>
         <button disabled={game.count < 6} onClick={() => game.close()}><Grab size={14}/> Jepit</button>
@@ -101,6 +102,17 @@ function MotionPanel({ game, active, player }: { game: Game; active: boolean; pl
     </div>}
     <p className="live-hint" role="status">{game.hint}</p>
     {game.count === 6 && <button className="text-button cube-reset" onClick={() => game.resetCube()}><RotateCcw size={14}/> Kembalikan kubus</button>}
+  </div>;
+}
+
+function AutoPanel({ game, player }: { game: Game; player: MotionPlayer }) {
+  return <div className="motion-pane">
+    <div className="motion-intro"><div className="step-kicker">{game.robotMode === "hand" ? "Tangan lima jari" : "Capit paralel"}</div>
+      <h3>Gerak otomatis</h3>
+      <p>Pilih program, lalu robot bergerak sendiri. Tekan program yang berjalan untuk menghentikannya.</p>
+    </div>
+    <AutoControls game={game} player={player}/>
+    <p className="live-hint" role="status">{game.hint}</p>
   </div>;
 }
 
@@ -143,7 +155,7 @@ export default function Workshop() {
   const game = useGame();
   const player = useMotion(game);
   const [pane, setPane] = useState<Pane>("parts");
-  const [desktopPane, setDesktopPane] = useState<"assembly" | "motion">("assembly");
+  const [desktopPane, setDesktopPane] = useState<"assembly" | "motion" | "auto">("assembly");
   const [dialog, setDialog] = useState<DialogType>(null);
   const [view, setView] = useState<View>("perspective");
   const [zoom, setZoom] = useState(0);
@@ -253,6 +265,8 @@ export default function Workshop() {
     changePane("assembly");
     resetCamera();
   }
+  // Ambil dan taruh memakai seluruh lengan, jadi kamera kembali ke pandangan penuh.
+  const autoPlayer: MotionPlayer = { ...player, play: id => { if (id.endsWith("pick-place")) resetCamera(); player.play(id); } };
   function restart() { game.restart(); changePane("parts"); setDesktopPane("assembly"); resetCamera(); setDialog(null); }
 
   return <div className="workshop-app">
@@ -271,7 +285,7 @@ export default function Workshop() {
     <main className="studio" id="bengkel">
       <section className="studio-heading" aria-labelledby="workshop-title"><div>
         <h1 id="workshop-title">Bengkel lengan robot<span>.</span></h1>
-        <p>Rakit lengan robotmu, lalu pindahkan kubus kuning ke baki biru.</p>
+        <p>Rakit lengan robot, uji setiap sendinya, lalu jalankan program otomatis.</p>
       </div><div className="build-progress" role="progressbar" aria-label="Komponen terpasang" aria-valuenow={count} aria-valuemin={0} aria-valuemax={6}>
         <div><span className="progress-name">Progres rakitan</span><span className="progress-count"><strong>{count}</strong> / 6</span></div>
         <div className="progress-track">{parts.map((part, i) => <i key={part.id} className={i < count ? "filled" : ""}/>)}</div>
@@ -299,11 +313,13 @@ export default function Workshop() {
           <button aria-pressed={pane === "parts"} onClick={() => changePane("parts")}><Boxes size={15}/>Komponen</button>
           <button aria-pressed={pane === "assembly"} onClick={() => changePane("assembly")}><Layers3 size={15}/>Perakitan</button>
           <button aria-pressed={pane === "motion"} onClick={() => changePane("motion")}><SlidersHorizontal size={15}/>Uji gerak</button>
+          <button aria-pressed={pane === "auto"} disabled={!complete} onClick={() => changePane("auto")}><Sparkles size={15}/>Otomatis</button>
         </div>
         <aside className="guide-panel" aria-label="Panduan dan kontrol robot">
           <div className="guide-tabs" aria-label="Pilih panel">
-            <button aria-pressed={desktopPane === "assembly"} onClick={() => changePane("assembly")}><Layers3 size={15}/> Perakitan</button>
-            <button aria-pressed={desktopPane === "motion"} onClick={() => changePane("motion")}><SlidersHorizontal size={15}/> Uji gerak</button>
+            <button aria-pressed={desktopPane === "assembly"} onClick={() => changePane("assembly")}><i>{complete ? <Check size={11} strokeWidth={3}/> : 1}</i>Rakit</button>
+            <button aria-pressed={desktopPane === "motion"} onClick={() => changePane("motion")}><i>2</i>Uji gerak</button>
+            <button aria-pressed={desktopPane === "auto"} disabled={!complete} title={complete ? undefined : "Selesaikan rakitan dulu"} onClick={() => changePane("auto")}><i>3</i>Otomatis</button>
           </div>
           {desktopPane === "assembly" ? <div className="guide-body">
             <button className="reference-card" aria-label="Perbesar model acuan lengan robot" onClick={() => setDialog("reference")}>
@@ -326,7 +342,8 @@ export default function Workshop() {
               <div className="secondary-actions"><button disabled={selected === null || complete} onClick={() => game.rotate()} title="Putar komponen" aria-label="Putar komponen"><RotateCw size={14}/>Putar 90°</button>
                 <button disabled={count === 0} onClick={() => game.undo()} title="Lepas bagian terakhir" aria-label="Lepas bagian terakhir"><Undo2 size={15}/>Urungkan</button></div>
             </div>
-          </div> : <MotionPanel game={game} active={pane === "motion" && dialog === null} player={player}/>}
+          </div> : desktopPane === "auto" && complete ? <AutoPanel game={game} player={autoPlayer}/>
+            : <MotionPanel game={game} active={pane === "motion" && dialog === null} player={player}/>}
         </aside>
         <section className="parts-drawer" aria-labelledby="parts-heading">
           <div className="drawer-heading"><div><div className="drawer-icon"><Boxes size={21}/></div><h2 id="parts-heading">Laci komponen</h2></div><span className="drawer-count">{parts.length} komponen</span></div>

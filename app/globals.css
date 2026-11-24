@@ -432,3 +432,125 @@ kbd { font-family: var(--mono); background: #f0f2e9; padding: 2px 4px; border: 1
 .auto-banner { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; margin-top: 10px; padding: 7px 10px; border: 1px solid #d38760; border-radius: 8px; background: #ffeddc; font-size: 11.5px; text-align: left; }
 .auto-banner i { font-style: normal; font-weight: 700; color: #7c3218; }
 @media (prefers-reduced-motion: reduce) { .motion-sections button.running::before { animation: none; } }
+
+/* ── Penyegaran antarmuka: lebih lapang, konsisten, dan mudah dibaca ── */
+:root {
+  --soft: #f3f4f0;
+  --paper: #ffffff;
+  --line: #e1e5db;
+  --radius: 14px;
+  --shadow: 0 1px 2px #1b2a2109, 0 10px 28px #1b2a210b;
+}
+.site-header { position: sticky; top: 0; z-index: 20; background: #ffffffe0; backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px); }
+.header-inner { height: 62px; }
+.brand > span { font-size: 23px; letter-spacing: -1.2px; }
+.brand > svg { width: 32px; height: 32px; }
+.main-nav a, .main-nav button { font-size: 13.5px; }
+.sound-button, .icon-button, .restart-button { border-radius: 10px; }
+.restart-button { min-height: 36px; font-size: 13px; background: var(--paper); }
+
+.studio { padding-block: clamp(20px, 2.2vw, 30px) 28px; }
+.studio-heading { margin-bottom: 16px; align-items: flex-end; }
+h1 { font-size: clamp(28px, 2.7vw, 40px); letter-spacing: -.045em; }
+.studio-heading p { font-size: 14px; margin-top: 7px; letter-spacing: 0; }
+.progress-name { font-size: 12.5px; }
+.progress-track i { height: 6px; border-radius: 4px; }
+
+.model-bar { margin: 0 0 16px; }
+.model-caption { font-size: 13px; }
+.model-options, .motion-sections { border-radius: 12px; padding: 4px; gap: 4px; background: #e8ece2; border-color: transparent; }
+.model-options button, .motion-sections button { border-radius: 9px; min-height: 36px; transition: background .15s, color .15s, box-shadow .15s; }
+.model-options button[aria-pressed="true"], .motion-sections button[aria-pressed="true"] { box-shadow: 0 1px 3px #14261c40; }
+.try-hand { border-radius: 10px; border-color: var(--line); box-shadow: var(--shadow); }
+
+.workspace { gap: 18px; }
+.scene-panel, .guide-panel, .parts-drawer { border-color: var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.scene-caption, .socket-focus, .camera-toolbar { border-color: #d5dbcf; border-radius: 10px; background: #ffffffe6; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 1px 3px #1b2a2112; }
+.socket-focus { min-height: 32px; font-size: 12px; }
+.camera-toolbar button { border-radius: 7px; }
+@media (min-width: 761px) {
+  .scene-panel { height: 100%; min-height: clamp(430px, 34vw, 540px); }
+}
+
+/* Tab panel bernomor: tiga langkah yang jelas dari merakit sampai otomatis */
+.guide-tabs { grid-template-columns: repeat(3, 1fr); padding: 8px; gap: 4px; border-bottom: 1px solid var(--line); background: #f7f8f4; }
+.guide-tabs button { min-height: 40px; margin: 0; border: 0; border-radius: 9px; gap: 7px; font-size: 13px; color: #5d665a; transition: background .15s, color .15s; }
+.guide-tabs button i { display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: #dfe4d8; color: #4b5648; font: 700 10.5px var(--mono); font-style: normal; }
+.guide-tabs button:hover:enabled { background: #eceee6; }
+.guide-tabs button[aria-pressed="true"] { background: var(--paper); color: var(--ink); border: 0; box-shadow: 0 1px 3px #1b2a2118, 0 0 0 1px #e1e5db; }
+.guide-tabs button[aria-pressed="true"] i { background: var(--accent); color: #2a1a10; }
+.guide-tabs button:disabled { opacity: .45; }
+.mobile-tabs button:disabled { opacity: .45; }
+
+.guide-body, .motion-pane { padding: 18px; }
+.step-kicker { font-size: 10.5px; letter-spacing: .1em; }
+.guide-direction h2, .motion-intro h3 { font-size: 23px; letter-spacing: -.035em; }
+.guide-direction p, .motion-intro p { font-size: 13.5px; line-height: 1.5; margin-top: 6px; }
+.primary-button, .secondary-button { min-height: 42px; border-radius: 10px; font-size: 13.5px; }
+.secondary-actions button, .grip-controls button { min-height: 36px; border-radius: 9px; font-size: 12.5px; border-color: var(--line); }
+
+.joint-controls { gap: 16px; margin-top: 16px; }
+.joint-row > span, .grip-controls > span { font-size: 13px; }
+.joint-row output, .finger-range output { font-size: 11.5px; padding: 2px 6px; border-radius: 6px; background: #eef1e9; color: #3f4d3e; }
+.joint-row.locked output { background: transparent; font-size: 11px; padding: 0; }
+.joint-row input, .finger-range input { height: 22px; margin-top: 4px; cursor: pointer; }
+.finger-range { grid-template-columns: 84px minmax(0, 1fr) 42px; min-height: 34px; }
+.finger-range input { margin-top: 0; }
+.hand-poses { gap: 6px; margin: 14px 0 10px; }
+.hand-poses button, .rotary-steps button, .rotary-spin, .wrist-neutral { min-height: 36px; border-radius: 9px; border-color: var(--line); font-size: 12.5px; }
+.grip-controls { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.grip-controls button { min-width: 78px; }
+.motion-pane .live-hint { margin-top: 16px; padding: 10px 12px; border-radius: 10px; border-left: 3px solid #5f8a66; background: #eef3ea; font-size: 12.5px; line-height: 1.45; color: #2f4a37; }
+.text-button { font-size: 12.5px; }
+.cube-reset { margin-top: 14px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; }
+.cube-reset:hover { background: #eef1e9; text-decoration: none; }
+
+.parts-drawer { padding: 18px 20px 20px; }
+.drawer-heading h2 { font-size: 17px; letter-spacing: -.03em; }
+.drawer-count { font-size: 11.5px; }
+.part-card { border-radius: 12px; border-color: var(--line); background: #f6f7f2; }
+.part-label { font-size: 12.5px; }
+.part-index { font-size: 10px; }
+.workshop-footer { font-size: 12px; margin-top: 16px; }
+.workshop-footer button { font-size: 12px; }
+
+.auto-controls { gap: 10px; margin-top: 16px; }
+.auto-controls button b { font-size: 13.5px; }
+.auto-controls button small { font-size: 11.5px; line-height: 1.4; }
+.auto-task { border-radius: 12px; padding: 12px 14px; }
+.auto-heading { margin-top: 8px; font-size: 11px; }
+.auto-list { gap: 8px; }
+.auto-list button { border-radius: 12px; padding: 11px 12px; border-color: var(--line); transition: background .15s, border-color .15s, transform .12s; }
+.auto-list button:enabled:active { transform: scale(.985); }
+.auto-list button i { width: 26px; height: 26px; }
+.auto-status { border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
+.auto-status progress { height: 6px; }
+.auto-banner { margin: 14px 0 0; padding: 9px 12px; border-radius: 10px; font-size: 12.5px; }
+.auto-banner i { display: inline-flex; align-items: center; gap: 5px; }
+.motion-sections { display: grid; grid-template-columns: .8fr 1.3fr .9fr; margin-top: 14px; }
+.motion-sections button { font-size: 12.5px; padding-inline: 4px; }
+
+.workshop-dialog { border-radius: 18px; border-color: var(--line); }
+
+@media (max-width: 1050px) {
+  .guide-tabs button { font-size: 12px; gap: 5px; }
+  .guide-body, .motion-pane { padding: 15px; }
+}
+@media (max-width: 760px) {
+  .mobile-tabs { grid-template-columns: repeat(4, 1fr); border-radius: 12px; padding: 4px; }
+  .mobile-tabs button { border-radius: 9px; min-height: 40px; font-size: 11.5px; gap: 5px; }
+  .site-header { position: static; }
+}
+@media (max-width: 420px) {
+  .mobile-tabs button svg { display: none; }
+}
+.guide-tabs button { white-space: nowrap; padding-inline: 4px; }
+@media (max-width: 1050px) { .guide-tabs { padding: 6px; gap: 2px; } .guide-tabs button i { width: 17px; height: 17px; font-size: 10px; } }
+@media (min-width: 761px) {
+  .scene-panel, .workspace[data-hand-ready="true"] .scene-panel { height: clamp(430px, 36vw, 560px); min-height: 0; align-self: start; position: sticky; top: 78px; }
+}
+@media (min-width: 761px) {
+  .workspace { grid-template-areas: "scene guide" "parts guide"; grid-template-rows: auto 1fr; align-items: start; }
+  .scene-panel, .workspace[data-hand-ready="true"] .scene-panel { position: relative; top: auto; }
+  .guide-panel { align-self: stretch; }
+}

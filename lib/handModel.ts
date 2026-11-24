@@ -125,38 +125,43 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
   turned(rollPivot,"metal",[0,0,0],[[.034,.070],[.071,.070],[.078,.074],[.078,.078],
     [.074,.080],[.045,.080],[.045,.092],[.034,.092],[.034,.070]]);
   shield(rollPivot,"accent",[0,.075,-.078],.013,.004,.002);
-  // Universal (Cardan) joint, as used in real robot wrists: the rotor carries an outer
-  // yoke on the deviation axle, a cross block joins both axles at one point, and the
-  // inner yoke on the flexion axle carries the palm.
-  turned(rollPivot,"frame",[0,0,0],[[.001,.046],[.044,.046],[.050,.051],[.050,.073],[.001,.073],[.001,.046]]);
-  // Wide at the rotor and rounded around the axle, so a deviated arm never dips toward the palm.
-  const outerArm: Profile = [[-.032,.052],[.032,.052],[.025,.014],[.024,.002],[.0113,-.0065],[.0065,-.0113],
-    [0,-.013],[-.0065,-.0113],[-.0113,-.0065],[-.024,.002],[-.025,.014]];
+  // Heavy-duty universal (Cardan) wrist, as on industrial arms: a wide conical rotor hub carries
+  // thick outer yoke arms on the deviation axle, a long cross block joins both axles at one
+  // point, and a broad inner yoke with its flexion gearmotor bolts across the palm heel.
+  turned(rollPivot,"frame",[0,0,0],[[.001,.047],[.040,.047],[.058,.058],[.058,.073],[.001,.073],[.001,.047]]);
+  turned(rollPivot,"metal",[0,0,0],[[.058,.062],[.061,.063],[.061,.068],[.058,.069],[.058,.062]]);
+  // Wide at the hub and rounded around the axle, so a deviated arm never dips toward the palm.
+  const outerArm: Profile = [[-.044,.068],[.044,.068],[.040,.018],[.034,.006],[.0113,-.0065],[.0065,-.0113],
+    [0,-.013],[-.0065,-.0113],[-.0113,-.0065],[-.034,.006],[-.040,.018]];
   for (const side of [-1,1]) {
-    mesh(rollPivot,shape(outerArm,.010,.0015),"casing",[0,0,side*.037]);
+    mesh(rollPivot,shape(outerArm,.015,.0015),"casing",[0,0,side*.0345]);
     pin(rollPivot,"frame",[0,0,side*.0432],.0115,.002,"z");
+    pin(rollPivot,"accent",[0,0,side*.0447],.0055,.002,"z",true);
+    // Bolts fix each arm to the hub.
+    for (const x of [-.032,0,.032]) pin(rollPivot,"inset",[x,.044,side*.0432],.0045,.002,"z",true);
   }
   // The cross block is long across the palm, so the flexion bearings sit wide apart.
-  const crossBlock: Profile = [[-.046,.010],[-.040,.016],[.040,.016],[.046,.010],[.046,-.010],
-    [.040,-.016],[-.040,-.016],[-.046,-.010]];
-  mesh(deviationPivot,shape(crossBlock,.050,.002),"metal",[0,0,0]);
-  pin(deviationPivot,"metal",[0,0,0],.0085,.092,"z");
-  pin(deviationPivot,"metal",[0,0,0],.0085,.134,"x");
+  const crossBlock: Profile = [[-.070,.008],[-.050,.020],[.050,.020],[.070,.008],[.070,-.008],
+    [.050,-.020],[-.050,-.020],[-.070,-.008]];
+  mesh(deviationPivot,shape(crossBlock,.040,.002),"metal",[0,0,0]);
+  pin(deviationPivot,"frame",[0,0,0],.010,.082,"z");
+  pin(deviationPivot,"frame",[0,0,0],.010,.178,"x");
+  const innerArm: Profile = [[.018,0],[.0156,.009],[.009,.0156],[0,.018],[-.009,.0156],[-.0156,.009],
+    [-.018,0],[-.027,-.040],[-.027,-.068],[.027,-.068],[.027,-.040]];
   for (const side of [-1,1]) {
-    pin(deviationPivot,"accent",[0,0,side*.0465],.006,.002,"z",true);
-    pin(deviationPivot,"accent",[side*.0675,0,0],.006,.002,"x",true);
-  }
-  const innerArm: Profile = [[.013,0],[.0113,.0065],[.0065,.0113],[0,.013],[-.0065,.0113],[-.0113,.0065],
-    [-.013,0],[-.022,-.044],[-.022,-.068],[.022,-.068],[.022,-.044]];
-  for (const side of [-1,1]) {
-    const arm = mesh(wristPivot,shape(innerArm,.010,.0015),"frame",[side*.058,0,0]);
+    const arm = mesh(wristPivot,shape(innerArm,.016,.0015),"frame",[side*.085,0,0]);
     arm.rotation.y = Math.PI/2;
-    pin(wristPivot,"casing",[side*.0642,0,0],.0115,.002,"x");
   }
-  // The yoke base sits below the sweep of the outer arms and bolts to the palm heel.
-  mesh(wristPivot,shape([[-.066,-.060],[.066,-.060],[.079,-.069],[.074,-.081],
-    [-.074,-.081],[-.079,-.069]],.058,.002),"frame",[0,0,0]);
-  for (const x of [-.040,.040]) {
+  // Flexion gearmotor on the ulnar side and a sealed bearing cap on the radial side.
+  pin(wristPivot,"casing",[-.1055,0,0],.020,.022,"x");
+  pin(wristPivot,"frame",[-.1175,0,0],.016,.002,"x");
+  pin(wristPivot,"accent",[-.1190,0,0],.007,.002,"x",true);
+  pin(wristPivot,"casing",[.0965,0,0],.015,.004,"x");
+  pin(wristPivot,"accent",[.0992,0,0],.006,.002,"x",true);
+  // The yoke base sits below the sweep of the outer arms and bolts across the palm heel.
+  mesh(wristPivot,shape([[-.096,-.060],[.096,-.060],[.104,-.068],[.100,-.081],
+    [-.100,-.081],[-.104,-.068]],.058,.002),"frame",[0,0,0]);
+  for (const x of [-.070,-.035,0,.035,.070]) {
     pin(wristPivot,"metal",[x,-.071,.0305],.006,.003,"z",true);
     pin(wristPivot,"metal",[x,-.071,-.0305],.006,.003,"z",true);
   }
