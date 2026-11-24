@@ -355,14 +355,15 @@ export default function Workshop() {
           <WorkshopScene game={game} bus={bus} view={view} zoom={zoom} cameraReset={cameraReset} socketFocus={socketFocus}/>
           <Cheer bus={bus} nameOf={i => parts[i]?.name ?? "Komponen"}/>
           {showBench && benchPart && <div className="bench" role="group" aria-label={"Ruang rakit " + benchPart.name}>
-            <ComponentBench mode={game.robotMode} index={selected!} built={game.built}/>
+            <ComponentBench mode={game.robotMode} index={selected!} built={game.built} onBuild={game.build}/>
             <div className="bench-title"><span>Ruang rakit</span><b>{benchPart.name}</b></div>
             <div className="bench-dots" aria-hidden="true">{buildSteps.map((part, i) => <i key={part.name} className={i < game.built ? "done" : i === game.built ? "current" : ""}/>)}</div>
             <div className={`bench-note ${building ? "" : "finished"}`} role="status">
-              {building ? <><small>Bagian {game.built + 1} dari {buildSteps.length}</small><b>{buildSteps[game.built].name}</b></>
+              {building ? <><small>Bagian {game.built + 1} dari {buildSteps.length} · seret ke bayangan hijau</small><b>{buildSteps[game.built].name}</b></>
                 : <><small>Semua bagian terpasang</small><b>{benchPart.name} selesai!</b></>}
             </div>
-            <span className="bench-tip">Seret untuk memutar</span>
+            {building && <span className="bench-arrow" aria-hidden="true"><i/><i/><i/></span>}
+            <span className="bench-tip">Seret latar untuk memutar</span>
           </div>}
           <div className="scene-caption"><span className="live-dot"/><span>Meja kerja</span></div>
           <button className="socket-focus" disabled={complete && !isHand} onClick={() => setSocketFocus(v => v + 1)} title={complete && isHand ? "Lihat tangan" : "Lihat sambungan"}><Crosshair size={14}/><span>{complete && isHand ? "Lihat tangan" : "Lihat sambungan"}</span></button>
@@ -406,7 +407,7 @@ export default function Workshop() {
                 else if (needsRotation) game.rotate();
                 else game.place(0, selected);
               }}>{complete ? <SlidersHorizontal size={17}/> : selected === null ? <MousePointer2 size={17}/> : building ? <Wrench size={17}/> : needsRotation ? <RotateCw size={17}/> : <ArrowDownToLine size={17}/>}
-              <span>{complete ? "Buka kontrol gerak" : selected === null ? "Pilih komponen" : building ? `Pasang ${buildSteps[game.built].name.toLocaleLowerCase("id")}` : needsRotation ? "Putar 90°" : "Pasang ke robot"}</span><ArrowRight className="end-icon" size={16}/></button>
+              <span>{complete ? "Buka kontrol gerak" : selected === null ? "Pilih komponen" : building ? `Pasang ${buildSteps[game.built].name.toLocaleLowerCase("id")} otomatis` : needsRotation ? "Putar 90°" : "Pasang ke robot"}</span><ArrowRight className="end-icon" size={16}/></button>
               <div className="secondary-actions"><button disabled={selected === null || complete || building} onClick={() => game.rotate()} title="Putar komponen" aria-label="Putar komponen"><RotateCw size={14}/>Putar 90°</button>
                 <button disabled={count === 0} onClick={() => game.undo()} title="Lepas bagian terakhir" aria-label="Lepas bagian terakhir"><Undo2 size={15}/>Urungkan</button></div>
             </div>
