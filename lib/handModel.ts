@@ -125,21 +125,41 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
   turned(rollPivot,"metal",[0,0,0],[[.034,.070],[.071,.070],[.078,.074],[.078,.078],
     [.074,.080],[.045,.080],[.045,.092],[.034,.092],[.034,.070]]);
   shield(rollPivot,"accent",[0,.075,-.078],.013,.004,.002);
-  // A sealed rotary spindle feeds the gimbal core. The lower ball socket is
-  // part of the palm and pivots on the same point as both tilt axes.
-  turned(rollPivot,"frame",[0,0,0],[[.001,.032],[.035,.032],[.037,.037],[.038,.050],
-    [.047,.062],[.063,.069],[.063,.073],[.001,.073],[.001,.032]]);
-  mesh(deviationPivot,track(new THREE.SphereGeometry(.051,32,22)),"metal",[0,0,0]);
-  turned(wristPivot,"frame",[0,0,0],[[.027,-.045],[.039,-.034],[.048,-.022],[.053,-.006],
-    [.053,.003],[.056,.004],[.060,-.001],[.059,-.014],[.052,-.033],[.042,-.044],
-    [.030,-.052],[.024,-.050],[.027,-.045]]);
+  // Universal (Cardan) joint, as used in real robot wrists: the rotor carries an outer
+  // yoke on the deviation axle, a cross block joins both axles at one point, and the
+  // inner yoke on the flexion axle carries the palm.
+  turned(rollPivot,"frame",[0,0,0],[[.001,.046],[.044,.046],[.050,.051],[.050,.073],[.001,.073],[.001,.046]]);
+  // Wide at the rotor and rounded around the axle, so a deviated arm never dips toward the palm.
+  const outerArm: Profile = [[-.032,.052],[.032,.052],[.025,.014],[.024,.002],[.0113,-.0065],[.0065,-.0113],
+    [0,-.013],[-.0065,-.0113],[-.0113,-.0065],[-.024,.002],[-.025,.014]];
   for (const side of [-1,1]) {
-    pin(wristPivot,"casing",[side*.057,-.009,0],.016,.006,"x");
-    pin(wristPivot,"inset",[side*.061,-.009,0],.006,.002,"x",true);
+    mesh(rollPivot,shape(outerArm,.010,.0015),"casing",[0,0,side*.037]);
+    pin(rollPivot,"frame",[0,0,side*.0432],.0115,.002,"z");
   }
-  mesh(wristPivot,shape([[-.031,-.042],[.031,-.042],[.042,-.053],[.072,-.059],
-    [.079,-.069],[.074,-.081],[-.074,-.081],[-.079,-.069],[-.072,-.059],[-.042,-.053]],.061,.004),
-    "frame",[0,0,0]);
+  // The cross block is long across the palm, so the flexion bearings sit wide apart.
+  const crossBlock: Profile = [[-.046,.010],[-.040,.016],[.040,.016],[.046,.010],[.046,-.010],
+    [.040,-.016],[-.040,-.016],[-.046,-.010]];
+  mesh(deviationPivot,shape(crossBlock,.050,.002),"metal",[0,0,0]);
+  pin(deviationPivot,"metal",[0,0,0],.0085,.092,"z");
+  pin(deviationPivot,"metal",[0,0,0],.0085,.134,"x");
+  for (const side of [-1,1]) {
+    pin(deviationPivot,"accent",[0,0,side*.0465],.006,.002,"z",true);
+    pin(deviationPivot,"accent",[side*.0675,0,0],.006,.002,"x",true);
+  }
+  const innerArm: Profile = [[.013,0],[.0113,.0065],[.0065,.0113],[0,.013],[-.0065,.0113],[-.0113,.0065],
+    [-.013,0],[-.022,-.044],[-.022,-.068],[.022,-.068],[.022,-.044]];
+  for (const side of [-1,1]) {
+    const arm = mesh(wristPivot,shape(innerArm,.010,.0015),"frame",[side*.058,0,0]);
+    arm.rotation.y = Math.PI/2;
+    pin(wristPivot,"casing",[side*.0642,0,0],.0115,.002,"x");
+  }
+  // The yoke base sits below the sweep of the outer arms and bolts to the palm heel.
+  mesh(wristPivot,shape([[-.066,-.060],[.066,-.060],[.079,-.069],[.074,-.081],
+    [-.074,-.081],[-.079,-.069]],.058,.002),"frame",[0,0,0]);
+  for (const x of [-.040,.040]) {
+    pin(wristPivot,"metal",[x,-.071,.0305],.006,.003,"z",true);
+    pin(wristPivot,"metal",[x,-.071,-.0305],.006,.003,"z",true);
+  }
   mesh(palm,shape([
     [-.060,-.212],[.060,-.212],[.120,-.213],[.161,-.231],[.167,-.282],[.148,-.331],
     [.072,-.354],[-.046,-.358],[-.138,-.339],[-.174,-.304],[-.172,-.251],[-.141,-.223],

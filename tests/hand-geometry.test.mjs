@@ -312,3 +312,26 @@ test('moving a neighboring index or the opposition slider cannot flip a bent thu
     }
   }
 });
+
+test('universal-joint yokes, cross and palm never intersect across the full flexion and deviation range', t => {
+  const rig = setup(t);
+  const palmBody = node(rig, 'PalmBody');
+  for (const pitch of [-65,-40,-20,0,20,40,60,75]) for (const deviation of [-30,-15,0,10,20]) {
+    rig.setWrist({ pitch, deviation, roll: 0 });
+    rig.group.updateMatrixWorld(true);
+    const rotor = rigidTriangles(rig.rollPivot);
+    const cross = rigidTriangles(rig.deviationPivot);
+    // The axle pins legitimately pass through the bearing bores of both yokes.
+    const offAxle = ({ points }, axis) => points.some(p => {
+      const local = rig.deviationPivot.worldToLocal(p.clone());
+      return Math.hypot(axis === 'z' ? local.x : local.z, local.y) > .0135;
+    });
+    const moving = [...rigidTriangles(rig.wristPivot), ...rigidTriangles(palmBody)];
+    const hit = (a, b) => a.some(x => b.some(y => x.box.intersectsBox(y.box) &&
+      (edgesCross(x.points, y.points) || edgesCross(y.points, x.points))));
+    const label = ` at pitch=${pitch} deviation=${deviation}`;
+    assert.ok(!hit(rotor.filter(tri => offAxle(tri, 'z')), moving), 'rotor yoke meets the palm side' + label);
+    assert.ok(!hit(rotor.filter(tri => offAxle(tri, 'z')), cross.filter(tri => offAxle(tri, 'z'))), 'rotor yoke meets the cross' + label);
+    assert.ok(!hit(cross.filter(tri => offAxle(tri, 'x')), moving.filter(tri => offAxle(tri, 'x'))), 'cross meets the palm yoke' + label);
+  }
+});
