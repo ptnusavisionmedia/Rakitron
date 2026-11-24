@@ -64,3 +64,7 @@ Atau lewat CLI: `npx vercel` (preview) dan `npx vercel --prod` (produksi).
 Setiap komponen meluncur ke soket, menumbuk dengan bunyi "klik", memercikkan bintang, lalu bergetar sebentar. Tiap komponen yang terpasang menaikkan satu nada tangga nada pentatonik, sehingga enam komponen membentuk melodi kecil. Panah jingga menunjuk soket tujuan, komponen berikutnya berdenyut di meja, dan ada bunyi "tink" ketika komponen yang diseret masuk jangkauan soket. Saat robot selesai dan misi berhasil, muncul spanduk sorakan, konfeti, dan fanfare.
 
 Pada Uji gerak, sendi berbunyi seperti servo, capit atau tangan berbunyi saat menggenggam, dan kubus berdebam ketika mendarat. Semua bunyi disintesis dengan Web Audio di `lib/sfx.ts`, tanpa berkas audio. Suara menyala secara bawaan; tombol speaker mematikannya, dan tombol not musik menyalakan lagu latar. Pilihan disimpan di browser. Efek gerak dinonaktifkan bila sistem meminta *reduced motion*.
+
+## Gerak otomatis
+
+Setelah robot selesai dirakit, buka **Uji gerak → Otomatis**. **Ambil dan taruh otomatis** membuat robot mengambil kubus kuning dan menaruhnya di baki biru sendiri. Di bawahnya ada empat animasi gerak untuk tiap model: capit paralel punya Kalibrasi sumbu, Pindai area kerja, Las titik, dan Semprot cat; tangan lima jari punya Uji jari berurutan, Hitung satu sampai lima, Kencangkan baut, dan Uji rentang pergelangan. Tekan program yang sedang berjalan untuk menghentikannya. Program berjalan lewat aksi yang sama dengan kontrol manual, jadi batas sendi dan tabrakan tetap berlaku. Urutannya ada di `lib/motions.ts`.

@@ -26,11 +26,11 @@ export default function HandControls({ game }: { game: Game }) {
         <span>{labels[finger]}</span>
         <input aria-label={labels[finger]} type="range" min="0" max="90" step="1"
           value={game.fingers[finger]} onChange={e => game.setFinger(finger, Number(e.target.value))}/>
-        <output>{game.fingers[finger]}°</output>
+        <output>{Math.round(game.fingers[finger])}°</output>
       </label>)}
     </div>
     <label className="opposition-range joint-row">
-      <span><b>Oposisi ibu jari</b><output>{game.opposition}°</output></span>
+      <span><b>Oposisi ibu jari</b><output>{Math.round(game.opposition)}°</output></span>
       <input aria-label="Oposisi ibu jari" aria-describedby="opposition-help" type="range" min="0" max="90" step="1"
         value={game.opposition} onChange={e => game.setOpposition(Number(e.target.value))}/>
       <small id="opposition-help">Putar ibu jari ke arah telunjuk.</small>

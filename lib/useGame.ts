@@ -38,6 +38,7 @@ export function useGame() {
     close: () => dispatch({ type: 'close' }),
     resetCube: () => dispatch({ type: 'resetCube' }),
     restart: () => dispatch({ type: 'restart' }),
+    dispatch,
   }), []);
 
   return { ...state, ...actions };

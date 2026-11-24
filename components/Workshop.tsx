@@ -11,10 +11,12 @@ import {
 import { JOINT_LIMITS, partsFor, turnsToAlign, type RobotMode } from "../lib/game";
 import { PLACE_LAND, createBus, useGameEvents } from "../lib/gameEvents";
 import { sfx } from "../lib/sfx";
+import AutoControls from "./AutoControls";
 import Cheer from "./Cheer";
 import HandControls from "./HandControls";
 import WristControls from "./WristControls";
 import { useGame, type Game } from "../lib/useGame";
+import { useMotion, type MotionPlayer } from "../lib/useMotion";
 
 const WorkshopScene = dynamic(() => import("./WorkshopScene"), {
   ssr: false,
@@ -58,22 +60,29 @@ function Dialog({ kind, onClose, children }: { kind: DialogType; onClose: () => 
   </dialog>;
 }
 
-function MotionPanel({ game, active }: { game: Game; active: boolean }) {
-  const [section, setSection] = useState<"fingers" | "wrist" | "arm">("fingers");
-  const handReady = game.robotMode === "hand" && game.count === 6;
+function MotionPanel({ game, active, player }: { game: Game; active: boolean; player: MotionPlayer }) {
+  const [section, setSection] = useState<"fingers" | "wrist" | "arm" | "auto">("fingers");
+  const ready = game.count === 6;
+  const handReady = game.robotMode === "hand" && ready;
+  const showAuto = ready && section === "auto";
   const showFingers = handReady && section === "fingers";
   const showWrist = handReady && section === "wrist";
+  const running = player.status !== null;
   return <div className="motion-pane">
     <div className="motion-intro"><div className="step-kicker">{handReady ? "Tangan lima jari" : game.count === 6 ? "Misi pemindahan" : "Uji rakitan"}</div>
-      <h3>{game.won ? "Kubus berhasil dipindah!" : showWrist ? "Gerakkan pergelangan" : showFingers ? "Gerakkan jari" : game.count === 6 ? "Pindahkan kubus" : "Gerakkan sendi"}</h3>
-      <p>{game.won ? "Coba lagi dari posisi awal jika kamu mau." : showWrist ? "Pilih sudut telapak atau putar satu putaran penuh." : showFingers ? "Pilih gestur atau atur tekukan setiap jari." : handReady ? "Arahkan telapak ke kubus, lalu pilih Genggam di kontrol Jari." : game.count === 6 ? "Jepit kubus, angkat, lalu lepaskan di dalam baki." : "Coba setiap sendi begitu komponennya terpasang."}</p>
+      <h3>{showAuto ? "Gerak otomatis" : game.won ? "Kubus berhasil dipindah!" : showWrist ? "Gerakkan pergelangan" : showFingers ? "Gerakkan jari" : game.count === 6 ? "Pindahkan kubus" : "Gerakkan sendi"}</h3>
+      <p>{showAuto ? "Pilih program, lalu robot bergerak sendiri. Tekan lagi untuk menghentikan." : game.won ? "Coba lagi dari posisi awal jika kamu mau." : showWrist ? "Pilih sudut telapak atau putar satu putaran penuh." : showFingers ? "Pilih gestur atau atur tekukan setiap jari." : handReady ? "Arahkan telapak ke kubus, lalu pilih Genggam di kontrol Jari." : game.count === 6 ? "Jepit kubus, angkat, lalu lepaskan di dalam baki." : "Coba setiap sendi begitu komponennya terpasang."}</p>
     </div>
-    {handReady && <div className="motion-sections" role="group" aria-label="Bagian yang digerakkan">
-      <button type="button" aria-pressed={section === "fingers"} onClick={() => setSection("fingers")}>Jari</button>
-      <button type="button" aria-pressed={section === "wrist"} onClick={() => setSection("wrist")}>Pergelangan</button>
-      <button type="button" aria-pressed={section === "arm"} onClick={() => setSection("arm")}>Lengan</button>
+    {ready && <div className={`motion-sections ${handReady ? "four" : ""}`} role="group" aria-label="Bagian yang digerakkan">
+      {handReady && <button type="button" aria-pressed={showFingers} onClick={() => setSection("fingers")}>Jari</button>}
+      {handReady && <button type="button" aria-pressed={showWrist} onClick={() => setSection("wrist")}>Pergelangan</button>}
+      <button type="button" aria-pressed={!showAuto && !showFingers && !showWrist} onClick={() => setSection("arm")}>Lengan</button>
+      <button type="button" className={running ? "running" : ""} aria-pressed={showAuto} onClick={() => setSection("auto")}>Otomatis</button>
     </div>}
-    {showFingers ? <HandControls game={game}/> : showWrist ? <WristControls game={game} active={active}/> : <div className="joint-controls">
+    {running && !showAuto && <button type="button" className="auto-banner" onClick={() => player.stop()}>
+      <span><b>{player.status!.name}</b> sedang berjalan</span><i>Hentikan</i>
+    </button>}
+    {showAuto ? <AutoControls game={game} player={player}/> : showFingers ? <HandControls game={game}/> : showWrist ? <WristControls game={game} active={active}/> : <div className="joint-controls">
       {joints.map(({ key, title }) => {
         const limit = JOINT_LIMITS[key];
         const enabled = game.count >= limit.requires;
@@ -84,7 +93,7 @@ function MotionPanel({ game, active }: { game: Game; active: boolean }) {
         </label>;
       })}
     </div>}
-    {game.robotMode === "gripper" && <div className={`grip-controls ${game.highlight === "grip" ? "hinted" : ""}`}>
+    {game.robotMode === "gripper" && !showAuto && <div className={`grip-controls ${game.highlight === "grip" ? "hinted" : ""}`}>
       <span>Capit</span><div>
         <button disabled={game.count < 6} onClick={() => game.open()}><Hand size={14}/> Buka</button>
         <button disabled={game.count < 6} onClick={() => game.close()}><Grab size={14}/> Jepit</button>
@@ -132,6 +141,7 @@ function Axis() {
 
 export default function Workshop() {
   const game = useGame();
+  const player = useMotion(game);
   const [pane, setPane] = useState<Pane>("parts");
   const [desktopPane, setDesktopPane] = useState<"assembly" | "motion">("assembly");
   const [dialog, setDialog] = useState<DialogType>(null);
@@ -316,7 +326,7 @@ export default function Workshop() {
               <div className="secondary-actions"><button disabled={selected === null || complete} onClick={() => game.rotate()} title="Putar komponen" aria-label="Putar komponen"><RotateCw size={14}/>Putar 90°</button>
                 <button disabled={count === 0} onClick={() => game.undo()} title="Lepas bagian terakhir" aria-label="Lepas bagian terakhir"><Undo2 size={15}/>Urungkan</button></div>
             </div>
-          </div> : <MotionPanel game={game} active={pane === "motion" && dialog === null}/>}
+          </div> : <MotionPanel game={game} active={pane === "motion" && dialog === null} player={player}/>}
         </aside>
         <section className="parts-drawer" aria-labelledby="parts-heading">
           <div className="drawer-heading"><div><div className="drawer-icon"><Boxes size={21}/></div><h2 id="parts-heading">Laci komponen</h2></div><span className="drawer-count">{parts.length} komponen</span></div>

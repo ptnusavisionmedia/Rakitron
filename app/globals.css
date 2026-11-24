@@ -401,3 +401,34 @@ kbd { font-family: var(--mono); background: #f0f2e9; padding: 2px 4px; border: 1
 @media (prefers-reduced-motion: reduce) {
   .cheer, .cheer-icon, .part-card, .part-card img, .part-indicator, .progress-track i, .primary-button.attention, .progress-count strong { animation: none !important; }
 }
+
+/* Gerak otomatis */
+.motion-sections.four button { padding-inline: 4px; font-size: 12px; }
+.motion-sections button.running:not([aria-pressed="true"]) { color: #9a3d1a; }
+.motion-sections button.running::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: auto-pulse 1s ease-in-out infinite; }
+@keyframes auto-pulse { 50% { opacity: .25; } }
+.auto-controls { display: grid; gap: 8px; margin-top: 13px; }
+.auto-controls button { text-align: left; }
+.auto-controls button span { display: grid; gap: 2px; min-width: 0; }
+.auto-controls button b { font-size: 12.5px; font-weight: 700; }
+.auto-controls button small { font-size: 10.5px; line-height: 1.35; font-weight: 500; opacity: .82; }
+.auto-task { width: 100%; justify-content: flex-start; align-items: center; padding: 9px 12px; min-height: 52px; }
+.auto-task:disabled { opacity: .5; }
+.auto-heading { margin-top: 5px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.auto-list { display: grid; gap: 5px; }
+.auto-list button { display: flex; align-items: flex-start; gap: 9px; padding: 8px 10px; border: 1px solid #d4dbce; border-radius: 8px; background: #fffef9; }
+.auto-list button:enabled:hover { background: #edf1e7; }
+.auto-list button:disabled { opacity: .5; }
+.auto-list button i { flex: none; display: grid; place-items: center; width: 22px; height: 22px; margin-top: 1px; border-radius: 50%; background: #263f33; color: #fffef9; }
+.auto-list button[aria-pressed="true"] { border-color: #d38760; background: #ffeddc; }
+.auto-list button[aria-pressed="true"] i { background: var(--accent); color: #251f17; }
+.auto-status { display: grid; gap: 5px; padding: 8px 10px; border-radius: 8px; background: #eef2e7; font-size: 11.5px; }
+.auto-status div { display: flex; justify-content: space-between; gap: 8px; }
+.auto-status span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.auto-status progress { width: 100%; height: 5px; appearance: none; border: 0; border-radius: 3px; overflow: hidden; background: #d6ddce; }
+.auto-status progress::-webkit-progress-bar { background: #d6ddce; }
+.auto-status progress::-webkit-progress-value { background: var(--accent); transition: width .2s; }
+.auto-status progress::-moz-progress-bar { background: var(--accent); }
+.auto-banner { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; margin-top: 10px; padding: 7px 10px; border: 1px solid #d38760; border-radius: 8px; background: #ffeddc; font-size: 11.5px; text-align: left; }
+.auto-banner i { font-style: normal; font-weight: 700; color: #7c3218; }
+@media (prefers-reduced-motion: reduce) { .motion-sections button.running::before { animation: none; } }

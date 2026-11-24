@@ -5,7 +5,8 @@
 type Audio = { ctx: AudioContext; out: GainNode; music: GainNode; noise: AudioBuffer };
 export type SfxName =
   | "select" | "rotate" | "whoosh" | "snap" | "note" | "fanfare" | "undo"
-  | "servo" | "grab" | "release" | "land" | "win" | "magnet";
+  | "servo" | "grab" | "release" | "land" | "win" | "magnet"
+  | "motionStart" | "motionEnd" | "weld" | "spray" | "scan" | "torque";
 type PlayOptions = { delay?: number; step?: number; amount?: number };
 
 let audio: Audio | null = null;
@@ -266,6 +267,43 @@ const sounds: Record<SfxName, (a: Audio, o: PlayOptions) => void> = {
   magnet(a) {
     tone(a, { from: 1800, to: 3400, dur: .06, vol: .08 });
     hiss(a, { dur: .05, vol: .09, type: "bandpass", from: 4200, q: 4 });
+  },
+  motionStart(a) {
+    // Program mulai: rem servo terlepas, daya naik, lalu dua ping siap.
+    latch(a, 0, .16);
+    sweep(a, { from: 90, to: 360, dur: .32, vol: .1, fFrom: 260, fTo: 3000, q: 6 });
+    ping(a, 1319, .26, .07, .14);
+    ping(a, 1976, .34, .07, .2);
+  },
+  motionEnd(a) {
+    // Program selesai: daya turun, rem mengunci, ping konfirmasi.
+    sweep(a, { from: 300, to: 110, dur: .26, vol: .08, fFrom: 2200, fTo: 300, q: 6 });
+    latch(a, .22, .18);
+    psst(a, .24, .05, .18);
+    ping(a, 1568, .3, .07, .3);
+  },
+  weld(a) {
+    // Busur las: dengung listrik 100 Hz yang kasar dengan percikan derau tajam.
+    tone(a, { type: "sawtooth", from: 100, to: 96, dur: .26, vol: .2, filter: { type: "bandpass", freq: 1800, q: 1.5 } });
+    tone(a, { type: "square", from: 200, dur: .26, vol: .06, filter: { type: "highpass", freq: 2400 } });
+    for (let i = 0; i < 7; i++) hiss(a, { dur: .025, vol: .16 + Math.random() * .12, at: i * .035 + Math.random() * .012, type: "highpass", from: 4200 + Math.random() * 3000 });
+    latch(a, 0, .14);
+  },
+  spray(a) {
+    // Semprotan cat: desis udara panjang dan rata mengikuti satu lintasan.
+    hiss(a, { dur: 1.6, vol: .1, type: "bandpass", from: 5200, to: 4200, q: .8 });
+    hiss(a, { dur: 1.6, vol: .05, type: "highpass", from: 7000 });
+    whine(a, 300, 330, 1.5, .025);
+  },
+  scan(a) {
+    // Pemindai: ping sonar berulang selama lengan menyapu.
+    for (let i = 0; i < 6; i++) ping(a, i % 2 ? 2093 : 1568, i * .58, .05, .22);
+  },
+  torque(a) {
+    // Motor pergelangan berputar terus: desis naik lalu turun dengan detak roda gigi.
+    whine(a, 240, 420, .9, .06);
+    whine(a, 420, 260, .9, .06, .9);
+    for (let i = 0; i < 9; i++) tone(a, { type: "square", from: 900, dur: .012, vol: .02, at: i * .2, attack: .001 });
   },
 };
 
