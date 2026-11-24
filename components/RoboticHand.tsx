@@ -2,6 +2,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import type { RefObject } from "react";
+import type { Group } from "three";
 import { FINGERS } from "../lib/game";
 import { createRoboticHand, type HandAngles, type HandModelProps } from "../lib/handModel";
 
@@ -18,13 +20,30 @@ type Transition = {
   duration: number;
 };
 
-export default function RoboticHand({ angles, opposition = 0, preview = false, highlighted = false, holding = false }: HandModelProps) {
+type HandViewProps = HandModelProps & {
+  wristQuaternion?: readonly [number, number, number, number];
+  wristRef?: RefObject<Group | null>;
+};
+
+export default function RoboticHand({ angles, opposition = 0, preview = false, highlighted = false, holding = false, wristQuaternion, wristRef }: HandViewProps) {
   const rig = useMemo(() => createRoboticHand({ angles: resting, preview }), [preview]);
   const invalidate = useThree(state => state.invalidate);
   const active = useRef<typeof rig | null>(null);
   const current = useRef({ angles: { ...angles }, opposition, holding });
   const transition = useRef<Transition | null>(null);
   const { thumb, index, middle, ring, little } = angles;
+
+  useLayoutEffect(() => {
+    if (!wristRef) return;
+    wristRef.current = rig.wristPivot;
+    return () => { if (wristRef.current === rig.wristPivot) wristRef.current = null; };
+  }, [rig, wristRef]);
+
+  useLayoutEffect(() => {
+    if (wristQuaternion) rig.wristPivot.quaternion.fromArray(wristQuaternion);
+    else rig.wristPivot.quaternion.identity();
+    invalidate();
+  }, [rig, wristQuaternion, invalidate]);
 
   useLayoutEffect(() => {
     rig.setHighlighted(highlighted);

@@ -34,15 +34,17 @@ Tombol antarmuka dapat difokuskan dengan Tab dan diaktifkan dengan Enter atau Sp
 
 Pilih **Tangan lima jari** di atas meja. Gunakan **Coba tangan terakit** untuk menguji tangan secara langsung, atau rakit keenam komponen dari laci. Saat mengganti model yang sudah lengkap, lima komponen lengan tetap terpasang dan alat ujung baru siap dipasang.
 
+Pada tab **Pergelangan** di **Uji gerak**, gunakan **Tekuk pergelangan** untuk mengarahkan tangan ke telapak atau punggung, **Miringkan pergelangan** untuk bergerak ke sisi ibu jari atau kelingking, dan **Putar telapak** untuk memutar tangan pada sumbu panjangnya. **Netralkan pergelangan** mengembalikan ketiga sudut ke 0°. Saat membawa kubus, angkat lengan untuk memberi ruang sebelum memutar tangan.
+
 Di **Uji gerak → Jari**, geser satu jari untuk mengubah tekukannya. Penggeser **Oposisi ibu jari** memutar ibu jari ke arah telunjuk. Tombol **Buka**, **Genggam**, **Cubit** dan **Tunjuk** menggerakkan jari secara bersamaan. Pilih **Lihat tangan** untuk memeriksa ruas dari dekat dan **Atur ulang kamera** untuk melihat meja.
 
-Untuk mencoba misi dengan tangan terbuka, pilih **Lengan**. Dari pose awal, putar alas ke −135°, atur siku ke −92°, lalu bahu ke 37°. Kembali ke **Jari** dan pilih **Genggam**. Angkat bahu ke 45°, putar alas ke −45° di atas baki, lalu pilih **Buka** untuk melepas kubus.
+Untuk mencoba misi dengan tangan terbuka, pilih **Lengan**. Dengan pergelangan netral, putar alas ke −135°, atur siku ke −92°, lalu bahu ke 37°. Kembali ke **Jari** dan pilih **Genggam**. Angkat bahu ke 45°, putar alas ke −45° di atas baki, lalu pilih **Buka** untuk melepas kubus.
 
-Pada tab **Perakitan**, buka **Model acuan** untuk mengunduh model tangan dan lengan lengkap dalam format GLB. Model ini memuat sendi dan empat animasi gestur.
+Pada tab **Perakitan**, buka **Model acuan** untuk mengunduh model tangan dan lengan lengkap dalam format GLB. Model ini memuat empat animasi gestur dan satu demonstrasi gerak pergelangan.
 
 ## Aset dan pengujian
 
-- `npm run assets` membuat ulang komponen dasar dan ilustrasi. Jalankan `npm run assets:hand` sesudahnya untuk mengekspor rakitan tangan beserta empat animasinya ke `public/models/rakitron-hand.glb`.
+- `npm run assets` membuat ulang komponen dasar dan ilustrasi. Jalankan `npm run assets:hand` sesudahnya untuk mengekspor rakitan tangan beserta animasi jari dan pergelangan ke `public/models/rakitron-hand.glb`.
 - `npm test` menguji urutan dan orientasi pemasangan, ketersediaan kendali, penjepitan, pelepasan, serta kondisi keberhasilan misi.
 - `npm run typecheck` memeriksa TypeScript. `npm run build` membuat versi produksi.
 - Proyek menggunakan Next.js App Router, React, TypeScript, Three.js, dan React Three Fiber.

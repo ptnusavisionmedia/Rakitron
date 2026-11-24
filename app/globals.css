@@ -335,3 +335,16 @@ kbd { font-family: var(--mono); background: #f0f2e9; padding: 2px 4px; border: 1
 }
 .hand-download { display: inline-flex; align-items: center; gap: 7px; min-height: 39px; margin-top: 14px; padding: 0 12px; border: 1px solid #acb8a8; border-radius: 7px; font-size: 13px; font-weight: 650; }
 .hand-download:hover { background: #eef2e7; }
+
+.motion-sections { display: grid; grid-template-columns: .74fr 1.31fr .85fr; }
+.motion-sections button { min-width: 0; min-height: 36px; padding-inline: 5px; }
+.wrist-controls { display: grid; gap: 17px; margin-top: 17px; }
+.wrist-axis input { height: 23px; margin-block: 3px 0; cursor: pointer; }
+.wrist-axis small { display: flex; justify-content: space-between; gap: 6px; color: var(--muted); font-size: 11px; }
+.wrist-neutral { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; border: 1px solid #c8d1c4; border-radius: 7px; font-size: 12px; font-weight: 650; }
+.wrist-neutral:not(:disabled):hover { background: var(--sage); }
+.wrist-neutral:disabled { opacity: .55; }
+@media (max-width: 760px) {
+  .motion-sections button, .wrist-neutral { min-height: 40px; }
+  .wrist-axis input { min-height: 30px; }
+}

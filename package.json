@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "node scripts/serve.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/game.test.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "assets": "node --experimental-strip-types scripts/generate-assets.cjs",
     "assets:hand": "node --experimental-strip-types scripts/export-hand.mjs"
   },

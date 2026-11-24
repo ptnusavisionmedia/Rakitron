@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { JOINT_LIMITS, partsFor, turnsToAlign, type RobotMode } from "../lib/game";
 import HandControls from "./HandControls";
+import WristControls from "./WristControls";
 import { useGame, type Game } from "../lib/useGame";
 
 const WorkshopScene = dynamic(() => import("./WorkshopScene"), {
@@ -53,19 +54,21 @@ function Dialog({ kind, onClose, children }: { kind: DialogType; onClose: () => 
 }
 
 function MotionPanel({ game }: { game: Game }) {
-  const [section, setSection] = useState<"fingers" | "arm">("fingers");
+  const [section, setSection] = useState<"fingers" | "wrist" | "arm">("fingers");
   const handReady = game.robotMode === "hand" && game.count === 6;
   const showFingers = handReady && section === "fingers";
+  const showWrist = handReady && section === "wrist";
   return <div className="motion-pane">
     <div className="motion-intro"><div className="step-kicker">{handReady ? "Tangan lima jari" : game.count === 6 ? "Misi pemindahan" : "Uji rakitan"}</div>
-      <h3>{game.won ? "Kubus berhasil dipindah!" : showFingers ? "Gerakkan jari" : game.count === 6 ? "Pindahkan kubus" : "Gerakkan sendi"}</h3>
-      <p>{game.won ? "Coba lagi dari posisi awal jika kamu mau." : showFingers ? "Pilih gestur atau atur tekukan setiap jari." : handReady ? "Arahkan telapak ke kubus, lalu pilih Genggam di kontrol Jari." : game.count === 6 ? "Jepit kubus, angkat, lalu lepaskan di dalam baki." : "Coba setiap sendi begitu komponennya terpasang."}</p>
+      <h3>{game.won ? "Kubus berhasil dipindah!" : showWrist ? "Gerakkan pergelangan" : showFingers ? "Gerakkan jari" : game.count === 6 ? "Pindahkan kubus" : "Gerakkan sendi"}</h3>
+      <p>{game.won ? "Coba lagi dari posisi awal jika kamu mau." : showWrist ? "Atur arah telapak. Gunakan posisi netral untuk meluruskan kembali tangan." : showFingers ? "Pilih gestur atau atur tekukan setiap jari." : handReady ? "Arahkan telapak ke kubus, lalu pilih Genggam di kontrol Jari." : game.count === 6 ? "Jepit kubus, angkat, lalu lepaskan di dalam baki." : "Coba setiap sendi begitu komponennya terpasang."}</p>
     </div>
     {handReady && <div className="motion-sections" role="group" aria-label="Bagian yang digerakkan">
-      <button type="button" aria-pressed={section === "fingers"} onClick={() => setSection("fingers")}><Hand size={14}/>Jari</button>
-      <button type="button" aria-pressed={section === "arm"} onClick={() => setSection("arm")}><SlidersHorizontal size={14}/>Lengan</button>
+      <button type="button" aria-pressed={section === "fingers"} onClick={() => setSection("fingers")}>Jari</button>
+      <button type="button" aria-pressed={section === "wrist"} onClick={() => setSection("wrist")}>Pergelangan</button>
+      <button type="button" aria-pressed={section === "arm"} onClick={() => setSection("arm")}>Lengan</button>
     </div>}
-    {showFingers ? <HandControls game={game}/> : <div className="joint-controls">
+    {showFingers ? <HandControls game={game}/> : showWrist ? <WristControls game={game}/> : <div className="joint-controls">
       {joints.map(({ key, title }) => {
         const limit = JOINT_LIMITS[key];
         const enabled = game.count >= limit.requires;
@@ -310,11 +313,11 @@ export default function Workshop() {
       {dialog === "help" && <><span className="dialog-symbol"><BookOpen size={24}/></span><h2 id="dialog-title">Cara bermain</h2>
         <ol className="help-steps"><li><strong>Pilih bagian robot</strong><p>Pilih model lengan, lalu mulai dari alas di laci komponen. Untuk mencoba gestur langsung, pilih Tangan lima jari dan tekan Coba tangan terakit.</p></li>
           <li><strong>Cocokkan dan pasang</strong><p>Jika diminta, tekan Putar 90° sampai bagian sejajar. Lalu ketuk soket, seret bagian ke soket, atau tekan Pasang komponen.</p></li>
-          <li><strong>Gerakkan rakitanmu</strong><p>Buka Uji gerak untuk mencoba sendi. Pada model tangan, gunakan Lengan untuk mendekati kubus dan Jari untuk menggenggam atau melepasnya ke baki.</p></li></ol>
+          <li><strong>Gerakkan rakitanmu</strong><p>Buka Uji gerak untuk mencoba sendi. Pada model tangan, dekatkan lengan ke kubus, atur arah telapak di Pergelangan, lalu buka Jari untuk memilih Genggam atau Cubit.</p></li></ol>
         <div className="shortcuts"><span><kbd>R</kbd> Putar bagian</span><span><kbd>Enter</kbd> Pasang</span><span><kbd>Ctrl/⌘ Z</kbd> Urungkan</span></div>
         <button className="primary-button modal-primary" onClick={() => setDialog(null)}>Kembali ke bengkel<ArrowRight size={16}/></button></>}
       {dialog === "reference" && <><div className="step-kicker">Model acuan</div><h2 id="dialog-title">Lengan robot lengkap</h2><div className="ref-large"><img src={referenceImage} alt={referenceAlt}/></div>
-        <p>{isHand ? "Tangan terpasang di ujung lengan bawah. Empat jari menekuk dan ibu jari dapat berputar ke arah telunjuk." : "Ikuti urutan komponen dari alas hingga capit. Coba gerakkan setiap sendi saat sudah terpasang."}</p>
+        <p>{isHand ? "Pergelangan mengarahkan telapak. Pangkal ibu jari berputar mendekati telunjuk, lalu kedua ruasnya menekuk saat mencubit." : "Ikuti urutan komponen dari alas hingga capit. Coba gerakkan setiap sendi saat sudah terpasang."}</p>
         {isHand && <a className="hand-download" href="/models/rakitron-hand.glb" download="Rakitron-Tangan-Lima-Jari.glb"><ArrowDownToLine size={16}/>Unduh model 3D (.glb)</a>}</>}
       {dialog === "restart" && <><span className="dialog-symbol"><RotateCcw size={24}/></span><h2 id="dialog-title">Mulai rakitan baru?</h2><p>Komponen akan kembali ke laci dan kubus akan kembali ke posisi awal.</p>
         <div className="confirm-buttons"><button className="secondary-button" onClick={() => setDialog(null)}>Lanjut bermain</button><button className="primary-button" onClick={restart}>Mulai ulang<RotateCcw size={15}/></button></div></>}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { gameReducer as step, initialState, CUBE_SIZE, CUBE_START, TRAY, PARTS, FINGERS, HAND_PRESETS, partsFor, getPose, SNAP_DISTANCE, turnsToAlign } from '../lib/game.ts';
+import { gameReducer as step, initialState, CUBE_SIZE, CUBE_START, TRAY, PARTS, FINGERS, HAND_PRESETS, partsFor, getPose, fitsTray, WRIST_LIMITS, NEUTRAL_WRIST, wristQuaternion, SNAP_DISTANCE, turnsToAlign } from '../lib/game.ts';
 
 const joint = (s, key, value) => step(s, { type:'joint', key, value });
 const action = (s, type) => step(s, { type });
@@ -260,4 +260,154 @@ test('ready-made hand is opt-in, fully open and separate from manual assembly', 
   const posed = preset(ready, 'point');
   assert.equal(action(posed, 'tryHand'), posed);
   assert.equal(action(posed, 'undo').count, 5);
+});
+
+const wrist = (s, key, value) => step(s, { type: 'wrist', key, value });
+const near = (a, b, epsilon = 1e-9) => assert.ok(Math.abs(a-b) <= epsilon, `${a} differs from ${b}`);
+const vectorNear = (actual, expected) => actual.forEach((value, i) => near(value, expected[i]));
+const radians = degrees => degrees*Math.PI/180;
+const aroundX = ([x,y,z], a) => [x, y*Math.cos(a)-z*Math.sin(a), y*Math.sin(a)+z*Math.cos(a)];
+const aroundY = ([x,y,z], a) => [x*Math.cos(a)+z*Math.sin(a), y, -x*Math.sin(a)+z*Math.cos(a)];
+const aroundZ = ([x,y,z], a) => [x*Math.cos(a)-y*Math.sin(a), x*Math.sin(a)+y*Math.cos(a), z];
+
+test('wrist axes are locked until the hand is installed, independently limited, and reset on removal', () => {
+  for (const locked of [initialState('hand'), action(assembledHand(), 'undo'), assembled()]) {
+    assert.equal(wrist(locked, 'pitch', 25), locked);
+    assert.equal(action(locked, 'resetWrist'), locked);
+  }
+  let s = assembledHand();
+  assert.deepEqual(s.wrist, NEUTRAL_WRIST);
+  for (const [axis, limit] of Object.entries(WRIST_LIMITS)) {
+    const start = s;
+    assert.equal(wrist(s, axis, Infinity), s);
+    s = wrist(s, axis, -200);
+    assert.deepEqual(s.wrist, { ...start.wrist, [axis]: limit.min });
+    s = wrist(s, axis, 200);
+    assert.deepEqual(s.wrist, { ...start.wrist, [axis]: limit.max });
+    assert.equal(s.joints, start.joints);
+    assert.equal(s.fingers, start.fingers);
+    assert.equal(s.cube, start.cube);
+  }
+  assert.equal(wrist(s, 'not-a-joint', 10), s);
+  assert.deepEqual(action(s, 'resetWrist').wrist, NEUTRAL_WRIST);
+  assert.deepEqual(action(s,'resetCube').wrist, s.wrist);
+  const undo = action(s,'undo');
+  assert.deepEqual(place(select(undo,5)).wrist, NEUTRAL_WRIST);
+  assert.deepEqual(step(s,{type:'robotMode', mode:'gripper'}).wrist, NEUTRAL_WRIST);
+  assert.deepEqual(action(s, 'restart').wrist, NEUTRAL_WRIST);
+});
+
+test('grip center follows local flexion, deviation and roll around the stationary mounting pin', () => {
+  const joints = { yaw: 39, shoulder: 65, elbow: -105 };
+  for (const angles of [
+    NEUTRAL_WRIST, { pitch: 55, deviation: 0, roll: 0 }, { pitch: 0, deviation: 18, roll: 0 },
+    { pitch: 0, deviation: 0, roll: -82 }, { pitch: -32, deviation: -20, roll: 64 },
+  ]) {
+    const neutral = getPose(joints,'hand');
+    const current = getPose(joints,'hand',angles);
+    const rotated = aroundY(aroundZ(aroundX([0,-.54,0], radians(-angles.pitch)), radians(angles.deviation)),
+      radians(joints.yaw+angles.roll));
+    vectorNear(current.grip, neutral.wrist.map((value, i) => value+rotated[i]));
+    vectorNear(current.wrist, neutral.wrist);
+    vectorNear(current.elbow, neutral.elbow);
+    near(Math.hypot(...current.orientation),1);
+    const fixed = getPose(joints,'gripper');
+    assert.deepEqual(getPose(joints,'gripper',angles), fixed);
+  }
+});
+
+test('the tilted contact volume detects a cube next to the palm and rejects the old vertical grip position', () => {
+  let s = wrist(assembledHand(), 'pitch', 75);
+  s = wrist(s,'roll',72);
+  const pose = getPose(s.joints,'hand',s.wrist);
+  const displaced = getPose(s.joints,'hand').grip;
+  const withCubeAt = position => ({ ...s, cube: { ...s.cube, position, orientation: pose.orientation } });
+  assert.equal(preset(withCubeAt(displaced),'grasp').cube.mode,'rest');
+  const picked = preset(withCubeAt(pose.grip),'pinch');
+  assert.equal(picked.cube.mode,'held');
+  vectorNear(picked.cube.position,pose.grip);
+  vectorNear(picked.cube.orientation,pose.orientation);
+  const besideCube = joint(joint(joint(assembledHand(),'yaw',-128),'elbow',-92),'shoulder',42);
+  assert.equal(preset(besideCube,'pinch').cube.mode, 'rest');
+  const gentlyTilted = wrist(reachCubeWithHand(),'pitch',-3);
+  assert.equal(preset(gentlyTilted,'grasp').cube.mode, 'held');
+});
+
+test('carried cube follows wrist rotation and releases without a position or orientation jump', () => {
+  const atCube = reachCubeWithHand();
+  let s = preset(atCube,'grasp');
+  assert.equal(s.cube.mode,'held');
+  vectorNear(s.cube.position,atCube.cube.position);
+  vectorNear(s.cube.orientation,atCube.cube.orientation);
+  s = joint(s, 'shoulder', 55);
+  const beforeTwist = s;
+  const angles = { pitch: 32, deviation: -17, roll: 48 };
+  for (const [axis,value] of Object.entries(angles)) s = wrist(s,axis,value);
+  assert.deepEqual(s.wrist,angles);
+  const mounting = getPose(s.joints,'hand').wrist;
+  const oldOffset = beforeTwist.cube.position.map((value,i)=>value-mounting[i]);
+  const localOffset = aroundY(oldOffset, radians(-s.joints.yaw));
+  const moved = aroundY(aroundZ(aroundX(localOffset,radians(-angles.pitch)),radians(angles.deviation)),radians(s.joints.yaw+angles.roll));
+  vectorNear(s.cube.position, mounting.map((value,i)=>value+moved[i]));
+  near(Math.abs(s.cube.orientation.reduce((sum,v,i)=>sum+v*wristQuaternion(angles,s.joints.yaw)[i],0)),1);
+  assert.notDeepEqual(s.cube.orientation,beforeTwist.cube.orientation);
+  const retained = s.cube;
+  for (const release of [preset(s,'open'),action(s,'undo'),step(s,{type:'robotMode',mode:'gripper'})]) {
+    assert.equal(release.cube.mode,'falling');
+    assert.equal(release.cube.handContact, undefined);
+    vectorNear(release.cube.position,retained.position);
+    vectorNear(release.cube.orientation,retained.orientation);
+  }
+  const tiltDrop = settle(preset(s,'open'));
+  assert.ok(tiltDrop.cube.position[1] > CUBE_SIZE/2 + .01);
+  vectorNear(tiltDrop.cube.orientation,retained.orientation);
+});
+
+test('wrist movement, combined neutral return, and arm movement stop at table contact and recover after lifting', () => {
+  const low = reachCubeWithHand();
+  const contact = wrist(low,'pitch',75);
+  assert.ok(contact.wrist.pitch < 75);
+  const held = preset(low,'grasp');
+  assert.equal(wrist(held,'pitch',75).wrist.pitch,0);
+  const lifted = joint(held,'shoulder',55);
+  assert.equal(wrist(lifted,'pitch',75).wrist.pitch,75);
+  const tilted = wrist(wrist(assembledHand(),'pitch',65),'deviation',18);
+  const lowered = joint(joint(tilted,'elbow',-92),'shoulder',0);
+  assert.ok(lowered.joints.shoulder > 0);
+  const attempted = action(lowered,'resetWrist');
+  assert.ok(attempted.wrist.pitch > 0);
+  assert.match(attempted.hint,/Angkat lengan/);
+  const returned = action(joint(attempted,'shoulder',55),'resetWrist');
+  assert.deepEqual(returned.wrist, NEUTRAL_WRIST);
+  assert.equal(returned.count,6);
+});
+
+test('tray acceptance uses tilted cube corners and the hand can deliver after exercising all wrist axes', () => {
+  const edge = TRAY.width/2-CUBE_SIZE/2-.008;
+  const offset = aroundY([edge,0,0],radians(TRAY.yaw));
+  const cube = { ...initialState().cube, yaw: TRAY.yaw, position: [TRAY.x+offset[0],1,TRAY.z+offset[2]],
+    orientation: wristQuaternion(NEUTRAL_WRIST,TRAY.yaw) };
+  assert.equal(fitsTray(cube),true);
+  assert.equal(fitsTray({ ...cube, orientation: wristQuaternion({ ...NEUTRAL_WRIST, deviation:20 },TRAY.yaw) }),false);
+  let s = joint(preset(reachCubeWithHand(),'grasp'),'shoulder',45);
+  for (const [axis,value] of [['pitch',30],['deviation',-10],['roll',40]]) s=wrist(s,axis,value);
+  s = joint(action(s,'resetWrist'),'yaw',-45);
+  assert.equal(s.cube.mode,'held');
+  assert.equal(settle(preset(s,'open')).won,true);
+});
+
+test('radial deviation keeps the ring fingertip above the table when the forearm lowers', () => {
+  let s = wrist(assembledHand(), 'deviation', 20);
+  s = joint(s, 'elbow', -92);
+  s = joint(s, 'shoulder', 35.50);
+  // This target would put the mounting pin at y=0.6395, just below the tilted fingertip's reach.
+  s = joint(s, 'shoulder', 35.25903);
+  const pose = getPose(s.joints,'hand',s.wrist);
+  // Measured vertices on the ring finger in the open and cube-bracing meshes.
+  for (const vertex of [[-.0741,-.6555,-.2248],[-.0720,-.6565,-.2133]]) {
+    const worldY = pose.wrist[1] + aroundZ(vertex,radians(20))[1];
+    assert.ok(worldY >= 0 && worldY < .012, 'ring finger should stop immediately above the tabletop');
+  }
+  s = joint(s, 'shoulder', 55);
+  assert.deepEqual(action(s,'resetWrist').wrist,NEUTRAL_WRIST);
 });

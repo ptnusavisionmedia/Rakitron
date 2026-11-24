@@ -9,7 +9,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { Game } from "../lib/useGame";
-import { SNAP_DISTANCE, TRAY } from "../lib/game";
+import { SNAP_DISTANCE, TRAY, wristQuaternion } from "../lib/game";
 import RoboticHand from "./RoboticHand";
 import WorkshopTable from "./WorkshopTable";
 import { ReceiverTray, Ring, WoodenCube } from "./SceneObjects";
@@ -162,7 +162,7 @@ function CameraRig({ view, reset, zoom, lock, focus, socket, wrist, controls, in
     const c = controls.current;
     if (!c || lock.current) return;
     if (inspecting === "hand" && wrist.current) {
-      // Translate camera and orbit target together as the wrist moves.
+      // Follow the palm center while preserving the camera's world-space viewing direction.
       const target = wrist.current.localToWorld(palmCenter.set(0,-.40,0));
       camera.position.sub(c.target).add(target);
       c.target.copy(target);
@@ -234,12 +234,14 @@ function Model({ source, style="real", gap }: { source: THREE.Object3D; style?: 
   return <primitive object={node} dispose={null} />;
 }
 
-function PartModel({ index, source, game, style, attached = false }: {
+function PartModel({ index, source, game, style, attached = false, wristRef }: {
   index: number; source: THREE.Object3D; game: Game; style: ModelStyle; attached?: boolean;
+  wristRef?: RefObject<THREE.Group|null>;
 }) {
   if (index === 5 && game.robotMode === "hand") {
     return <RoboticHand angles={game.fingers} opposition={game.opposition}
-      holding={attached && game.cube.mode === "held"}
+      wristQuaternion={attached ? wristQuaternion(game.wrist) : undefined}
+      wristRef={attached ? wristRef : undefined} holding={attached && game.cube.mode === "held"}
       preview={style === "blueprint" || style === "socket-preview"}
       highlighted={style === "selected" || style === "active"} />;
   }
@@ -303,9 +305,10 @@ function Robot({ models, stand, game, socket, wrist }: {
     const built = i < count;
     const current = i === count;
     const h = (["yaw","shoulder","shoulder","elbow","elbow","grip"] as const)[i];
-    const style:ModelStyle = built ? (h === highlight ? "active" : "real") :
+    const active = h === highlight || (i === 5 && game.robotMode === "hand" && highlight === "wrist");
+    const style:ModelStyle = built ? (active ? "active" : "real") :
       selected === i && current ? "socket-preview" : "blueprint";
-    const model = <PartModel index={i} source={models[i]} style={style} game={game} attached={built}/>;
+    const model = <PartModel index={i} source={models[i]} style={style} game={game} attached={built} wristRef={wrist}/>;
     return <>
       {built ? <SeatedPart index={i} forearmAngle={joints.shoulder+joints.elbow}>{model}</SeatedPart> :
         (current && (showBlueprint || selected===i)) && model}
@@ -331,7 +334,7 @@ function Robot({ models, stand, game, socket, wrist }: {
             <group rotation-z={joints.elbow*D}>
               {content(3)}
               {content(4)}
-              <group ref={wrist} position-x={1.10} rotation-z={-(joints.elbow+joints.shoulder)*D}>
+              <group name="HandMount" position-x={1.10} rotation-z={-(joints.elbow+joints.shoulder)*D}>
                 {content(5)}
               </group>
             </group>
@@ -573,7 +576,9 @@ function Workbench({ game,view="perspective",cameraReset=0,socketFocus=0,zoom=0,
     <Robot stand={stand} models={models} game={game} socket={socket} wrist={wrist} />
     <LooseParts key={game.robotMode} models={models} game={game} socket={socket} lock={lock} controls={controls} inspecting={typeof activeInspection === "number" ? activeInspection : null} />
     <ReceiverTray tray={TRAY} />
-    <WoodenCube position={[...game.cube.position]} yaw={game.cube.yaw} />
+    <group name="MissionCube" position={game.cube.position} quaternion={game.cube.orientation}>
+      <WoodenCube position={[0,0,0]} yaw={0} />
+    </group>
   </>;
 }
 

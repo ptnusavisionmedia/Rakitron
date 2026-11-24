@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useReducer } from 'react';
-import { gameReducer, initialState, type Finger, type HandPreset, type Joint, type RobotMode } from './game';
+import { gameReducer, initialState, type Finger, type HandPreset, type Joint, type RobotMode, type WristAxis } from './game';
 
 export function useGame() {
   const [state, dispatch] = useReducer(gameReducer, undefined, initialState);
@@ -23,6 +23,8 @@ export function useGame() {
   const actions = useMemo(() => ({
     tryHand: () => dispatch({ type: 'tryHand' }),
     setRobotMode: (mode: RobotMode) => dispatch({ type: 'robotMode', mode }),
+    setWrist: (key: WristAxis, value: number) => dispatch({ type: 'wrist', key, value }),
+    resetWrist: () => dispatch({ type: 'resetWrist' }),
     setFinger: (key: Finger, value: number) => dispatch({ type: 'finger', key, value }),
     setOpposition: (value: number) => dispatch({ type: 'opposition', value }),
     setHandPreset: (preset: HandPreset) => dispatch({ type: 'handPreset', preset }),
