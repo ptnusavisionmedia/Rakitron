@@ -9,7 +9,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { Game } from "../lib/useGame";
-import { SNAP_DISTANCE, TRAY } from "../lib/game";
+import { SNAP_DISTANCE, TRAY, handBraces } from "../lib/game";
 import { PLACE_LAND, createBus, type Bus } from "../lib/gameEvents";
 import RoboticHand from "./RoboticHand";
 import { Effects, useFx } from "./Effects";
@@ -296,7 +296,7 @@ function PartModel({ index, source, game, style, attached = false, wristRef, lay
   if (index === 5 && game.robotMode === "hand") {
     return <RoboticHand angles={game.fingers} opposition={game.opposition}
       wrist={attached ? game.wrist : undefined}
-      wristRef={attached ? wristRef : undefined} holding={attached && game.cube.mode === "held"}
+      wristRef={attached ? wristRef : undefined} holding={attached && handBraces(game)}
       preview={style === "blueprint" || style === "socket-preview"}
       highlighted={style === "selected" || style === "active"} stage={layers} />;
   }

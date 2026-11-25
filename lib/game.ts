@@ -261,6 +261,19 @@ function inHand(orientation: Quaternion, grip: Vec3, cube: Cube) {
   return { offset, orientation: relative, betweenPads, alignedHeight };
 }
 
+/**
+ * Benar bila kubus berada di antara jari tangan: sedang dipegang, siap digenggam, atau baru
+ * dilepas dan masih jatuh di antara jari. Tampilan jari memakai ini agar berhenti di permukaan
+ * kubus dan tidak menembusnya.
+ */
+export function handBraces(state: GameState) {
+  if (state.robotMode !== 'hand' || state.count !== HAND_PARTS.length) return false;
+  if (state.cube.mode === 'held') return true;
+  const pose = getPose(state.joints, 'hand', state.wrist);
+  const contact = inHand(pose.orientation, pose.grip, state.cube);
+  return contact.betweenPads && contact.offset[1] <= .1 && contact.offset[1] >= -.45;
+}
+
 function jointHint(state: GameState, joints: Joints) {
   if (state.count < PARTS.length) return assemblyHint(state.robotMode, state.count, state.selected, state.rotation);
   if (state.cube.mode === 'falling') return 'Perhatikan tempat kubus mendarat.';

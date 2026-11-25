@@ -65,17 +65,20 @@ export default function RoboticHand({ angles, opposition = 0, preview = false, h
     const next = { thumb, index, middle, ring, little };
     const delta = Math.max(Math.abs(opposition-pose.opposition), ...FINGERS.map(key => Math.abs(next[key]-pose.angles[key])));
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (active.current !== rig || preview || reducedMotion || holding || holding !== pose.holding || delta <= 6) {
+    const instant = active.current !== rig || preview || reducedMotion;
+    // Di sekeliling kubus jari menutup lebih pelan, mengikuti permukaannya.
+    const around = holding || pose.holding;
+    pose.holding = holding;
+    if (instant || delta <= 6) {
       transition.current = null;
       pose.angles = next;
       pose.opposition = opposition;
-      pose.holding = holding;
-      if (active.current !== rig || preview || reducedMotion) grip.current = holding ? 1 : 0;
+      if (instant) grip.current = holding ? 1 : 0;
       rig.update(next, opposition, ease(grip.current));
     } else {
       transition.current = {
         start: { ...pose.angles }, goal: next, fromOpposition: pose.opposition,
-        toOpposition: opposition, elapsed: 0, duration: Math.min(.20,.09+delta*.0014),
+        toOpposition: opposition, elapsed: 0, duration: around ? .5 : Math.min(.20,.09+delta*.0014),
       };
     }
     active.current = rig;

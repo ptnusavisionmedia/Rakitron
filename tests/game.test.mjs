@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Quaternion } from 'three';
-import { gameReducer as step, initialState, CUBE_SIZE, CUBE_START, TRAY, PARTS, FINGERS, HAND_PRESETS, partsFor, getPose, fitsTray, WRIST_LIMITS, NEUTRAL_WRIST, HAND_PALM_OFFSET, HAND_WRIST_PIVOT, wristQuaternion, SNAP_DISTANCE, turnsToAlign, buildStepsFor } from '../lib/game.ts';
+import { gameReducer as step, initialState, CUBE_SIZE, CUBE_START, TRAY, PARTS, FINGERS, HAND_PRESETS, partsFor, getPose, fitsTray, WRIST_LIMITS, NEUTRAL_WRIST, HAND_PALM_OFFSET, HAND_WRIST_PIVOT, wristQuaternion, SNAP_DISTANCE, turnsToAlign, buildStepsFor, handBraces } from '../lib/game.ts';
 
 const joint = (s, key, value) => step(s, { type:'joint', key, value });
 const action = (s, type) => step(s, { type });
@@ -595,4 +595,21 @@ test('sub-assembly progress resets with undo, restart, and changing the tool', (
   const swapped = step(tool, { type:'robotMode', mode:'hand' });
   assert.equal(swapped.selected, null);
   assert.equal(swapped.built, 0);
+});
+
+test('the hand braces against the cube only while the cube is between its fingers', () => {
+  assert.equal(handBraces(assembled()), false, 'the gripper never uses the hand pose');
+  assert.equal(handBraces(assembledHand()), false, 'far from the cube');
+  const around = reachCubeWithHand();
+  assert.equal(around.cube.mode, 'rest');
+  assert.equal(handBraces(around), true, 'open hand around the resting cube');
+  const held = preset(around, 'grasp');
+  assert.equal(held.cube.mode, 'held');
+  assert.equal(handBraces(joint(held, 'shoulder', 60)), true, 'still braced while carrying');
+  let released = preset(joint(held, 'shoulder', 60), 'open');
+  assert.equal(released.cube.mode, 'falling');
+  assert.equal(handBraces(released), true, 'the cube is still between the fingers as it starts to fall');
+  released = settle(released);
+  assert.equal(handBraces(released), false, 'the cube has dropped clear of the hand');
+  assert.equal(handBraces(joint(around, 'shoulder', 70)), false, 'lifting the open hand away');
 });

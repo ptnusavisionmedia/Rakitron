@@ -364,3 +364,49 @@ test('closing on the cube blends continuously from the free pose into the bracin
   sample(-3).forEach((p, i) => assert.ok(p.distanceTo(free[i]) < 1e-9));
   sample(7).forEach((p, i) => assert.ok(p.distanceTo(held[i]) < 1e-9));
 });
+
+test('around a cube no digit enters it for any finger, thumb or opposition setting, and closing never jumps', t => {
+  const rig = setup(t);
+  const center = point(rig, 'GripCenter');
+  const v = new THREE.Vector3();
+  const digits = ['Thumb', 'Index', 'Middle', 'Ring', 'Little'];
+  const clearance = () => {
+    let min = Infinity;
+    rig.group.updateMatrixWorld(true);
+    for (const digit of digits) node(rig, digit).traverse(mesh => {
+      if (!mesh.isMesh) return;
+      const positions = mesh.geometry.getAttribute('position');
+      for (let i = 0; i < positions.count; i++) {
+        v.fromBufferAttribute(positions, i).applyMatrix4(mesh.matrixWorld).sub(center);
+        min = Math.min(min, Math.max(Math.abs(v.x), Math.abs(v.y), Math.abs(v.z)) - .15);
+      }
+    });
+    return min;
+  };
+  // Every slider combination a child can reach while the hand surrounds the cube.
+  for (let thumb = 0; thumb <= 90; thumb += 15) for (let opposition = 0; opposition <= 90; opposition += 15) {
+    for (const bend of [0, 45, 90]) {
+      rig.update({ thumb, index: bend, middle: bend, ring: bend, little: bend }, opposition, true);
+      assert.ok(clearance() > -.004, `inside the cube at thumb=${thumb} opposition=${opposition} fingers=${bend}`);
+    }
+  }
+  // The whole closing stroke of each gesture, as the automatic program plays it.
+  const tips = digits.map(name => name + 'Tip');
+  for (const preset of ['grasp', 'pinch', 'point']) {
+    const { fingers, opposition } = HAND_PRESETS[preset];
+    let previous = null;
+    for (let k = 0; k <= 60; k++) {
+      const s = k / 60;
+      rig.update(Object.fromEntries(Object.entries(fingers).map(([key, value]) => [key, value * s])), opposition * s, true);
+      assert.ok(clearance() > -.004, `${preset} enters the cube at ${s}`);
+      const now = tips.map(name => point(rig, name));
+      if (previous) now.forEach((p, i) => assert.ok(p.distanceTo(previous[i]) < .03, `${tips[i]} jumps in ${preset} at ${s}`));
+      previous = now;
+    }
+  }
+  // An open hand looks the same whether or not a cube is between the fingers, so entering the zone is invisible.
+  rig.update(open, 0, false);
+  const free = tips.map(name => point(rig, name));
+  rig.update(open, 0, true);
+  tips.forEach((name, i) => assert.ok(point(rig, name).distanceTo(free[i]) < 1e-6, name + ' moves when the cube enters the hand'));
+});

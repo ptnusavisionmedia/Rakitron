@@ -341,6 +341,7 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
     return false;
   }
 
+  const clampAngle = (value: number) => THREE.MathUtils.clamp(Number.isFinite(value) ? value : 0, 0, 90);
   // Mengatur pose bebas atau pose memegang kubus, dan mengembalikan bukaan tambahan ibu jari.
   function pose(values: HandAngles, thumbOpposition: number, carriesCube: boolean) {
     for (const {data,finger,mcp,pip,dip} of digits) {
@@ -376,27 +377,37 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
   }
 
   /**
-   * `carriesCube` boleh berupa angka 0..1: jari berpindah bertahap dari pose bebas ke pose
-   * menahan kubus, sehingga genggaman menutup pelan dan tidak melompat.
+   * `carriesCube` menyatakan seberapa jauh tangan menyesuaikan diri dengan kubus di antara jarinya
+   * (0..1, atau true). Empat jari langsung mengikuti gerak yang berhenti di permukaan kubus, dan
+   * ibu jari berpindah ke sisi kubus seiring ia menutup. Dengan begitu jari tidak pernah menembus
+   * kubus, baik saat mendekat, menutup, maupun membuka.
    */
   function update(values: HandAngles, thumbOpposition = 0, carriesCube: boolean | number = false) {
     const hold = typeof carriesCube === "number" ? THREE.MathUtils.clamp(carriesCube,0,1) : carriesCube ? 1 : 0;
-    if (hold <= 0 || hold >= 1) { pose(values,thumbOpposition,hold >= 1); return; }
+    if (hold <= 0) { pose(values,thumbOpposition,false); return; }
     const extra = pose(values,thumbOpposition,false);
-    const mix = (a: number, b: number) => a + (b - a) * hold;
+    const mix = (a: number, b: number, t: number) => a + (b - a) * t;
     for (const {data,finger,mcp,pip,dip} of digits) {
       const free = getFingerHinges(data,values[data.key],false), held = getFingerHinges(data,values[data.key],true);
-      finger.rotation.z = mix(free.splay,held.splay);
-      mcp.rotation.x = mix(free.mcp,held.mcp);
-      pip.rotation.x = mix(free.pip,held.pip);
-      dip.rotation.x = mix(free.dip,held.dip);
+      finger.rotation.z = mix(free.splay,held.splay,hold);
+      mcp.rotation.x = mix(free.mcp,held.mcp,hold);
+      pip.rotation.x = mix(free.pip,held.pip,hold);
+      dip.rotation.x = mix(free.dip,held.dip,hold);
     }
-    const free = getThumbHinges(values.thumb,thumbOpposition,false), held = getThumbHinges(values.thumb,thumbOpposition,true);
-    cmcOrientation.setFromAxisAngle(yawAxis,mix(free.yaw,held.yaw))
-      .multiply(turn.setFromAxisAngle(outwardAxis,mix(free.abduction,held.abduction)))
-      .multiply(turn.setFromAxisAngle(yawAxis,mix(free.pronation,held.pronation)));
-    thumbMcp.rotation.x = mix(free.mcp,held.mcp);
-    ip.rotation.x = mix(free.ip,held.ip);
+    // Ibu jari mengayun dari posisi terbuka ke sisi kubus lewat jalur yang aman: membuka dan
+    // berputar dulu di luar kubus, baru menekuk untuk menempel. Kemajuannya mengikuti seberapa
+    // jauh ibu jari menutup dan berhadapan dengan jari lain.
+    const closing = Math.min(1,Math.min(clampAngle(values.thumb)/52,clampAngle(thumbOpposition)/48));
+    const stage = (from: number, to: number) => THREE.MathUtils.smoothstep(closing,from,to);
+    const open = getThumbHinges(0,0,false), held = getThumbHinges(values.thumb,thumbOpposition,true);
+    const free = getThumbHinges(values.thumb,thumbOpposition,false);
+    const swing = stage(0,.6), flex = stage(.45,1);
+    const settle = (key: keyof typeof open, t: number) => mix(free[key],mix(open[key],held[key],t),hold);
+    cmcOrientation.setFromAxisAngle(yawAxis,settle("yaw",swing))
+      .multiply(turn.setFromAxisAngle(outwardAxis,settle("abduction",swing)))
+      .multiply(turn.setFromAxisAngle(yawAxis,settle("pronation",stage(0,.7))));
+    thumbMcp.rotation.x = settle("mcp",flex);
+    ip.rotation.x = settle("ip",stage(.55,1));
     setAbduction(extra * (1 - hold));
   }
   update(angles,opposition,holding);
