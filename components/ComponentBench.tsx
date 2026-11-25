@@ -41,8 +41,6 @@ function Subject({ mode, index, built, control, onBuild }: {
   const settling = useRef<{ layer: number; from: THREE.Vector3; t: number } | null>(null);
   const grip = useRef({ plane: new THREE.Plane(), anchor: new THREE.Vector3(), x: 0, y: 0 });
   const proxy = useRef<THREE.Mesh>(null);
-  const halo = useRef<THREE.Mesh>(null);
-  const view = useMemo(() => new THREE.Vector3(), []);
   const scratch = useMemo(() => ({ turn: new THREE.Quaternion(), local: new THREE.Vector3(), hit: new THREE.Vector3() }), []);
 
   const subject = useMemo(() => {
@@ -149,23 +147,14 @@ function Subject({ mode, index, built, control, onBuild }: {
       turntable.current.updateMatrixWorld(true);
     }
     subject.goal.opacity = calm ? .3 : .24 + .14 * Math.sin(clock.elapsedTime * 4.5);
-    // Area pegang dan lingkaran penanda mengikuti bagian yang menunggu, menghadap kamera.
+    // Area pegang yang tak terlihat mengikuti bagian yang menunggu, menghadap kamera.
     const waiting = built < subject.layers;
-    camera.getWorldDirection(view);
     const { wide, tall } = shape.current;
     if (proxy.current) {
       proxy.current.visible = waiting;
       proxy.current.position.copy(offset.current);
       proxy.current.quaternion.copy(camera.quaternion);
       proxy.current.scale.set(wide * 1.2, Math.max(tall, wide * .3) * 1.2, 1);
-    }
-    if (halo.current) {
-      halo.current.visible = waiting;
-      halo.current.position.copy(offset.current).addScaledVector(view, subject.radius * 1.1);
-      halo.current.quaternion.copy(camera.quaternion);
-      halo.current.scale.set(wide * 1.2, Math.max(tall, wide * .3) * 1.2, 1);
-      const material = halo.current.material as THREE.MeshBasicMaterial;
-      material.opacity = state.current === "drag" ? .2 : calm ? .12 : .1 + .05 * Math.sin(clock.elapsedTime * 3);
     }
     if (state.current !== "drag") {
       // Kembali ke tempat tunggu dengan halus.
@@ -221,10 +210,6 @@ function Subject({ mode, index, built, control, onBuild }: {
 
   return <>
     <group ref={turntable}><primitive object={subject.holder} dispose={null} /></group>
-    <mesh ref={halo} renderOrder={-1} raycast={() => null}>
-      <circleGeometry args={[1, 56]} />
-      <meshBasicMaterial color="#ff713d" transparent opacity={.1} depthWrite={false} />
-    </mesh>
     <mesh ref={proxy} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
       onPointerOver={() => { document.body.style.cursor = "grab"; }} onPointerOut={() => { document.body.style.cursor = ""; }}>
       <circleGeometry args={[1, 40]} />
