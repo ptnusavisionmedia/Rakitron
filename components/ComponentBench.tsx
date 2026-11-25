@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { HAND_PRESETS, type RobotMode } from "../lib/game";
 import { createRoboticHand } from "../lib/handModel";
-import { BODY_PARTS } from "../lib/bodyGame";
+import { BODY_MODEL_URL, BODY_PARTS } from "../lib/bodyGame";
 
 type BenchMode = RobotMode | "body";
 
@@ -27,7 +27,7 @@ const settle = (t: number) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 
 function Subject({ mode, index, built, control, onBuild }: {
   mode: BenchMode; index: number; built: number; control: { current: BenchControl }; onBuild: () => void;
 }) {
-  const asset = useLoader(GLTFLoader, mode === "body" ? "/models/rakitron-body.glb" : "/models/rakitron-arm.glb");
+  const asset = useLoader(GLTFLoader, mode === "body" ? BODY_MODEL_URL : "/models/rakitron-arm.glb");
   const { camera, size } = useThree();
   // Ukuran area pegang di layar dan jarak tempat tunggu, dihitung dari bentuk komponen.
   const shape = useRef({ wide: 1, tall: 1, reach: 1 });

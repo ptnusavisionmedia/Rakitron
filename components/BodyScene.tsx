@@ -41,19 +41,20 @@ function BodyLights() {
     const environment = pmrem.fromScene(room, .04);
     const old = scene.environment;
     scene.environment = environment.texture;
-    scene.environmentIntensity = .48;
+    const oldIntensity = scene.environmentIntensity;
+    scene.environmentIntensity = .65;
     room.dispose();
     pmrem.dispose();
     invalidate();
-    return () => { scene.environment = old; environment.dispose(); };
+    return () => { scene.environment = old; scene.environmentIntensity = oldIntensity; environment.dispose(); };
   }, [gl, scene, invalidate]);
   return <>
-    <hemisphereLight color="#fff7e8" groundColor="#a4b49e" intensity={1.05} />
-    <directionalLight position={[-3.8,6.2,4.5]} intensity={2.05} color="#fff2de" castShadow
+    <hemisphereLight color="#f8f9f5" groundColor="#b2ad9e" intensity={.86} />
+    <directionalLight position={[-3.8,6.2,4.5]} intensity={2.2} color="#ffede1" castShadow
       shadow-mapSize-width={1024} shadow-mapSize-height={1024} shadow-camera-near={.2} shadow-camera-far={14}
       shadow-camera-left={-3.1} shadow-camera-right={3.1} shadow-camera-top={3.1} shadow-camera-bottom={-3.1}
       shadow-bias={-.0004} shadow-normalBias={.009} />
-    <directionalLight position={[3,3,-3.2]} intensity={1.35} color="#e2efff"/>
+    <directionalLight position={[3.1,3.4,-3.2]} intensity={1.7} color="#d3e5ff"/>
   </>;
 }
 
@@ -80,9 +81,10 @@ function AssemblyJig() {
     box([0,1.18,-.22], [.064,.25,.068], .01, plate);
     box([0,1.22,-.14], [.22,.042,.22], .011, rubber);
     for (const side of [-1,1]) {
-      box([side*.265,JIG_TOP+.002,.025],[.235,.005,.36],.002,rubber);
-      box([side*.265,JIG_TOP+.014,-.15],[.174,.027,.027],.006,steel);
-      box([side*.265,JIG_TOP+.002,.245],[.115,.004,.012],.002,copper);
+      const footX = BODY_ANCHORS[side < 0 ? "right-leg" : "left-leg"][0];
+      box([footX,JIG_TOP+.002,.025],[.235,.005,.36],.002,rubber);
+      box([footX,JIG_TOP+.014,-.15],[.174,.027,.027],.006,steel);
+      box([footX,JIG_TOP+.002,.245],[.115,.004,.012],.002,copper);
       for (const z of [-.32,.32]) {
         const bolt = new THREE.Mesh(new THREE.CylinderGeometry(.017,.017,.012,6), steel);
         bolt.position.set(side*.475,JIG_TOP+.002,z);
@@ -136,9 +138,9 @@ function Socket({index,current,handle,onPlace}: {index:number;current:boolean;ha
 }
 
 type CameraProps = Pick<BodySceneProps,"view"|"zoom"|"cameraReset"|"socketFocus"> & {
-  controls: React.RefObject<OrbitControls|null>; count: number; complete: boolean;
+  controls: React.RefObject<OrbitControls|null>; count: number; complete: boolean; optics: THREE.Object3D;
 };
-function CameraControls({controls,view="perspective",zoom=0,cameraReset=0,socketFocus=0,count,complete}:CameraProps) {
+function CameraControls({controls,view="perspective",zoom=0,cameraReset=0,socketFocus=0,count,complete,optics}:CameraProps) {
   const { camera, gl, size, invalidate } = useThree();
   const lastZoom = useRef(zoom);
   const lastFocus = useRef(socketFocus);
@@ -186,13 +188,22 @@ function CameraControls({controls,view="perspective",zoom=0,cameraReset=0,socket
     lastFocus.current=socketFocus;
     const orbit = controls.current;
     if (!orbit || !(camera instanceof THREE.PerspectiveCamera)) return;
-    const target = complete ? new THREE.Vector3(0,1.56,0) : dockingPoint(count);
-    const dir = new THREE.Vector3(count===3 ? -.74 : .60,.48,1).normalize();
-    const distance = Math.max(complete ? 3.8 : 2.6,2.1/(size.width/Math.max(1,size.height)));
+    const aspect = size.width / Math.max(1, size.height);
+    const target = complete ? optics.getWorldPosition(new THREE.Vector3()) : dockingPoint(count);
+    const dir = new THREE.Vector3(count===3 ? -.74 : .60,.48,1);
+    if (complete) {
+      optics.getWorldDirection(dir);
+      target.addScaledVector(dir, -.07);
+      target.y -= .018;
+      dir.applyAxisAngle(UP, .24);
+      dir.y += .09;
+    }
+    dir.normalize();
+    const distance = complete ? Math.max(1.02, .8 / aspect) : Math.max(2.6, 2.1 / aspect);
     orbit.target.copy(target);
     camera.position.copy(target).addScaledVector(dir,distance);
     orbit.update(); invalidate();
-  },[socketFocus,count,complete,camera,controls,invalidate,size.width,size.height]);
+  },[socketFocus,count,complete,camera,controls,invalidate,size.width,size.height,optics]);
   return null;
 }
 
@@ -433,7 +444,8 @@ function Bench({state,dispatch,view,zoom,cameraReset,socketFocus,onReady,covered
     <color attach="background" args={["#e8ece3"]}/>
     <BodyLights/>
     <CameraControls controls={controls} view={view} zoom={zoom} cameraReset={cameraReset}
-      socketFocus={socketFocus} count={state.count} complete={!next}/>
+      socketFocus={socketFocus} count={state.count} complete={!next}
+      optics={rig.optics}/>
     <WorkshopTable/>
     <AssemblyJig/>
     {BODY_PARTS.map(({id},i) => {

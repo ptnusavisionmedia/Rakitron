@@ -46,7 +46,7 @@ Pada tab **Perakitan**, buka **Model acuan** untuk mengunduh model tangan dan le
 
 Pilih **Robot seluruh tubuh → Rakit robot ini**. Susun empat bagian tiap modul di ruang rakit, lalu pasang modul ke soketnya. Mulai dari kaki kanan, kaki kiri, torso, tangan kanan, tangan kiri, lalu kepala. Kanan dan kiri mengikuti sisi tubuh robot. **Urungkan** melepas modul terakhir agar dapat dipasang kembali. **Coba robot terakit** membuka kontrol langsung.
 
-Di **Uji gerak**, atur kedua lutut, pinggang, kedua lengan, dan kepala. Untuk menyelesaikan misi salam, angkat tangan kanan minimal 65°, biarkan tangan kiri pada 0–20°, lalu tolehkan kepala ke kanan minimal 20°. Panel **Otomatis** menyediakan salam tangan kanan dan pemeriksaan keseimbangan. Model 3D tersedia di **Rakit → Model acuan**.
+Di **Uji gerak**, atur kedua lutut, pinggang, kedua lengan, dan kepala. Untuk menyelesaikan misi salam, angkat tangan kanan minimal 65°, biarkan tangan kiri pada 0–20°, lalu tolehkan kepala ke kanan minimal 20°. Saat lengan terangkat untuk menyapa, telapak ikut menghadap ke depan. Gunakan **Lihat wajah** untuk mengamati sensor mata, lalu **Atur ulang kamera** untuk kembali melihat tubuh lengkap. Panel **Otomatis** menyediakan salam tangan kanan dan pemeriksaan keseimbangan. Model 3D tersedia di **Rakit → Model acuan**.
 
 ## Aset dan pengujian
 

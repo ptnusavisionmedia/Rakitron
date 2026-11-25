@@ -4,6 +4,11 @@ export type BodyPartId = "right-leg" | "left-leg" | "torso" | "right-arm" | "lef
 export type BodyJoint = "rightKnee" | "leftKnee" | "torso" | "rightArm" | "leftArm" | "head";
 export type BodyPose = Record<BodyJoint, number>;
 
+// The model and its thumbnails share an immutable cache revision.
+const bodyRevision = "?v=android-2";
+export const BODY_MODEL_URL = "/models/rakitron-body.glb" + bodyRevision;
+export const BODY_REFERENCE_URL = "/parts/assembled-body.svg" + bodyRevision;
+
 export const BODY_NEUTRAL: BodyPose = { rightKnee: 0, leftKnee: 0, torso: 0, rightArm: 0, leftArm: 0, head: 0 };
 
 export const BODY_JOINT_LIMITS: Record<BodyJoint, { min: number; max: number; requires: number; label: string }> = {
@@ -17,11 +22,11 @@ export const BODY_JOINT_LIMITS: Record<BodyJoint, { min: number; max: number; re
 
 // The robot faces +Z and stands on Y=0. Anatomical right is the negative X side.
 export const BODY_ANCHORS: Record<BodyPartId, [number, number, number]> = {
-  "right-leg": [-.265, 1.18, 0],
-  "left-leg": [.265, 1.18, 0],
+  "right-leg": [-.174, 1.18, 0],
+  "left-leg": [.174, 1.18, 0],
   torso: [0, 1.18, 0],
-  "right-arm": [-.467, 1.92, 0],
-  "left-arm": [.467, 1.92, 0],
+  "right-arm": [-.349, 1.92, 0],
+  "left-arm": [.349, 1.92, 0],
   head: [0, 2.12, 0],
 };
 
@@ -51,12 +56,12 @@ function armSteps(side: string) {
     step("Rangka tangan " + side, "Hubungkan tulang lengan atas, lengan bawah, dan rangka telapak."),
     step("Penggerak bahu dan siku", "Pasang motor bahu dan engsel siku sehingga tangan dapat terangkat dan tertekuk."),
     step("Pelindung lengan", "Pasang cangkang di luar lengan dan punggung tangan. Jari dan siku harus tetap bebas bergerak."),
-    step("Pengunci pergelangan", "Kunci sambungan pergelangan dan periksa lima jari. Ibu jari berada di sisi dalam saat lengan rileks."),
+    step("Pengunci pergelangan", "Kunci sambungan pergelangan. Saat lengan rileks di sisi badan, ibu jari mengarah ke depan."),
   ];
 }
 
 function part(id: BodyPartId, name: string, description: string, initialRotation: number, steps: BuildStep[]): BodyPart {
-  return { id, name, short: name, description, initialRotation, steps, thumb: "/parts/body-" + id + ".svg" };
+  return { id, name, short: name, description, initialRotation, steps, thumb: "/parts/body-" + id + ".svg" + bodyRevision };
 }
 
 export const BODY_PARTS: BodyPart[] = [
@@ -73,8 +78,8 @@ export const BODY_PARTS: BodyPart[] = [
   part("head", "Kepala", "Turunkan kepala ke poros leher. Sensor depan menghadap searah dengan telapak kaki.", 0, [
     step("Rangka kepala", "Pasang rangka kepala pada cincin dudukan leher."),
     step("Penggerak leher", "Pasang motor putar agar kepala dapat menoleh ke kanan dan kiri."),
-    step("Cangkang kepala", "Tutup sisi kepala dengan cangkang dan sisakan bukaan di bagian depan."),
-    step("Sensor depan", "Pasang sensor pada bagian muka. Pastikan pandangannya bebas dari tepi cangkang."),
+    step("Cangkang kepala", "Pasang pelindung tengkorak, pipi, dan rahang. Sisakan dua rongga untuk mata robot."),
+    step("Sensor depan", "Dudukkan kedua sensor optik di bawah alis. Keduanya menghadap ke depan saat kepala lurus."),
   ]),
 ];
 

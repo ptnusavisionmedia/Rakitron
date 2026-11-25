@@ -17,7 +17,7 @@ import HandControls from "./HandControls";
 import WristControls from "./WristControls";
 import { useGame, type Game } from "../lib/useGame";
 import { useMotion, type MotionPlayer } from "../lib/useMotion";
-import { BODY_PARTS } from "../lib/bodyGame";
+import { BODY_MODEL_URL, BODY_PARTS, BODY_REFERENCE_URL } from "../lib/bodyGame";
 import { useBodyGame } from "../lib/useBodyGame";
 import { BodyAutoPanel, BodyMotionPanel } from "./BodyMotionPanel";
 
@@ -128,7 +128,7 @@ const ROBOTS: { mode: WorkshopMode; name: string; tagline: string; image: string
     points: ["6 komponen, 24 bagian untuk dirakit", "Dua rahang yang menjepit benda", "Bisa mengelas, memindai, dan mengecat"] },
   { mode: "hand", name: "Lengan tangan lima jari", tagline: "Robot dengan tangan seperti tanganmu", image: "/parts/assembled-hand.svg" + HAND_ASSET_VERSION, level: 2,
     points: ["6 komponen, 25 bagian untuk dirakit", "Lima jari dan pergelangan yang lentur", "Bisa berhitung, mencubit, dan memutar baut"] },
-  { mode: "body", name: "Robot seluruh tubuh", tagline: "Robot humanoid yang bisa menyapamu", image: "/parts/assembled-body.svg", level: 2,
+  { mode: "body", name: "Robot seluruh tubuh", tagline: "Robot humanoid yang bisa menyapamu", image: BODY_REFERENCE_URL, level: 2,
     points: ["6 modul, 24 tahap perakitan", "Dua kaki, torso, dua tangan, dan kepala", "Uji enam sendi dan buat robot menyapa"] },
 ];
 
@@ -226,7 +226,8 @@ export default function Workshop() {
   const complete = count === parts.length;
   const isHand = !isBody && game.robotMode === "hand";
   const modelTitle = isBody ? "Robot seluruh tubuh" : isHand ? "Lengan tangan lima jari" : "Lengan capit";
-  const referenceImage = isBody ? "/parts/assembled-body.svg" : isHand ? "/parts/assembled-hand.svg" + HAND_ASSET_VERSION : "/parts/assembled.svg";
+  const focusLabel = !complete ? "Lihat sambungan" : isBody ? "Lihat wajah" : "Lihat tangan";
+  const referenceImage = isBody ? BODY_REFERENCE_URL : isHand ? "/parts/assembled-hand.svg" + HAND_ASSET_VERSION : "/parts/assembled.svg";
   const referenceAlt = isBody ? "Robot humanoid lengkap pada posisi berdiri" : isHand ? "Lengan robot lengkap dengan tangan lima jari" : "Lengan robot lengkap dengan capit paralel";
   const buildSteps = selected === null ? [] : isBody ? BODY_PARTS[selected].steps : buildStepsFor(game.robotMode, selected);
   const building = selected !== null && assembly.built < buildSteps.length;
@@ -384,7 +385,7 @@ export default function Workshop() {
             <span className="bench-tip">Seret latar untuk memutar</span>
           </div>}
           <div className="scene-caption"><span className="live-dot"/><span>Meja kerja</span></div>
-          <button className="socket-focus" disabled={complete && !isHand} onClick={() => setSocketFocus(v => v + 1)} title={complete && isHand ? "Lihat tangan" : "Lihat sambungan"}><Crosshair size={14}/><span>{complete && isHand ? "Lihat tangan" : "Lihat sambungan"}</span></button>
+          <button className="socket-focus" disabled={complete && !isHand && !isBody} onClick={() => setSocketFocus(v => v + 1)} title={focusLabel}><Crosshair size={14}/><span>{focusLabel}</span></button>
           <CameraToolbar view={view} setView={setView} reset={resetCamera} zoom={n => setZoom(v => Math.max(-6, Math.min(8, v + n)))}/>
           <Axis/>
         </section>
@@ -465,7 +466,7 @@ export default function Workshop() {
         <button className="primary-button modal-primary" onClick={() => setDialog(null)}>Kembali ke bengkel<ArrowRight size={16}/></button></>}
       {dialog === "reference" && <><div className="step-kicker">Model acuan</div><h2 id="dialog-title">{isBody ? "Robot seluruh tubuh" : "Lengan robot lengkap"}</h2><div className="ref-large"><img src={referenceImage} alt={referenceAlt}/></div>
         <p>{isBody ? "Kedua kaki menopang panggul. Torso memuat dudukan bahu untuk kedua lengan dan poros leher untuk kepala bersensor." : isHand ? "Poros terpasang di tengah ujung lengan bawah dan segaris dengan tengah telapak. Telapak dapat berputar 360°, menekuk, dan miring pada sambungan ini." : "Ikuti urutan komponen dari alas hingga capit. Coba gerakkan setiap sendi saat sudah terpasang."}</p>
-        {(isHand || isBody) && <a className="hand-download" href={isBody ? "/models/rakitron-body.glb" : "/models/rakitron-hand.glb" + HAND_ASSET_VERSION} download={isBody ? "Rakitron-Robot-Seluruh-Tubuh.glb" : "Rakitron-Tangan-Lima-Jari.glb"}><ArrowDownToLine size={16}/>Unduh model 3D (.glb)</a>}</>}
+        {(isHand || isBody) && <a className="hand-download" href={isBody ? BODY_MODEL_URL : "/models/rakitron-hand.glb" + HAND_ASSET_VERSION} download={isBody ? "Rakitron-Robot-Seluruh-Tubuh.glb" : "Rakitron-Tangan-Lima-Jari.glb"}><ArrowDownToLine size={16}/>Unduh model 3D (.glb)</a>}</>}
       {dialog === "restart" && <><span className="dialog-symbol"><RotateCcw size={24}/></span><h2 id="dialog-title">Mulai rakitan baru?</h2><p>{isBody ? "Keenam modul dan bagian di dalamnya akan kembali ke laci." : "Komponen akan kembali ke laci dan kubus akan kembali ke posisi awal."}</p>
         <div className="confirm-buttons"><button className="secondary-button" onClick={() => setDialog(null)}>Lanjut bermain</button><button className="primary-button" onClick={restart}>Mulai ulang<RotateCcw size={15}/></button></div></>}
     </Dialog>
