@@ -359,10 +359,9 @@ export default function Workshop() {
             <div className="bench-title"><span>Ruang rakit</span><b>{benchPart.name}</b></div>
             <div className="bench-dots" aria-hidden="true">{buildSteps.map((part, i) => <i key={part.name} className={i < game.built ? "done" : i === game.built ? "current" : ""}/>)}</div>
             <div className={`bench-note ${building ? "" : "finished"}`} role="status">
-              {building ? <><small>Bagian {game.built + 1} dari {buildSteps.length} · seret ke bayangan hijau</small><b>{buildSteps[game.built].name}</b></>
+              {building ? <><small>Bagian {game.built + 1} dari {buildSteps.length} · seret atau ketuk bagian ini</small><b>{buildSteps[game.built].name}</b></>
                 : <><small>Semua bagian terpasang</small><b>{benchPart.name} selesai!</b></>}
             </div>
-            {building && <span className="bench-arrow" aria-hidden="true"><i/><i/><i/></span>}
             <span className="bench-tip">Seret latar untuk memutar</span>
           </div>}
           <div className="scene-caption"><span className="live-dot"/><span>Meja kerja</span></div>

@@ -10,6 +10,7 @@ import { createRoboticHand, type HandAngles, type HandModelProps } from "../lib/
 
 export { createRoboticHand } from "../lib/handModel";
 
+const ease = (t: number) => t * t * (3 - 2 * t);
 const resting: HandAngles = { thumb: 0, index: 0, middle: 0, ring: 0, little: 0 };
 
 type Transition = {
@@ -34,6 +35,8 @@ export default function RoboticHand({ angles, opposition = 0, preview = false, h
   const active = useRef<typeof rig | null>(null);
   const current = useRef({ angles: { ...angles }, opposition, holding });
   const transition = useRef<Transition | null>(null);
+  // 0 = pose bebas, 1 = jari menahan kubus. Nilainya bergerak bertahap agar genggaman tidak melompat.
+  const grip = useRef(holding ? 1 : 0);
   const { thumb, index, middle, ring, little } = angles;
 
   useLayoutEffect(() => {
@@ -67,7 +70,8 @@ export default function RoboticHand({ angles, opposition = 0, preview = false, h
       pose.angles = next;
       pose.opposition = opposition;
       pose.holding = holding;
-      rig.update(next, opposition, holding);
+      if (active.current !== rig || preview || reducedMotion) grip.current = holding ? 1 : 0;
+      rig.update(next, opposition, ease(grip.current));
     } else {
       transition.current = {
         start: { ...pose.angles }, goal: next, fromOpposition: pose.opposition,
@@ -80,17 +84,25 @@ export default function RoboticHand({ angles, opposition = 0, preview = false, h
 
   useFrame((_, dt) => {
     const move = transition.current;
-    if (!move) return;
-    noteMotion();
-    move.elapsed += Math.min(dt, .05);
-    const progress = Math.min(1, move.elapsed / move.duration);
-    const eased = progress * progress * (3 - 2 * progress);
     const pose = current.current;
-    for (const key of FINGERS) pose.angles[key] = move.start[key] + (move.goal[key] - move.start[key]) * eased;
-    pose.opposition = move.fromOpposition + (move.toOpposition - move.fromOpposition) * eased;
-    rig.update(pose.angles, pose.opposition, pose.holding);
-    if (progress < 1) invalidate();
-    else transition.current = null;
+    const target = pose.holding ? 1 : 0;
+    if (!move && grip.current === target) return;
+    noteMotion();
+    const step = Math.min(dt, .05);
+    // Menutup di sekeliling kubus lebih pelan daripada melepasnya.
+    grip.current = target ? Math.min(1, grip.current + step / .55) : Math.max(0, grip.current - step / .3);
+    let moving = grip.current !== target;
+    if (move) {
+      move.elapsed += step;
+      const progress = Math.min(1, move.elapsed / move.duration);
+      const eased = progress * progress * (3 - 2 * progress);
+      for (const key of FINGERS) pose.angles[key] = move.start[key] + (move.goal[key] - move.start[key]) * eased;
+      pose.opposition = move.fromOpposition + (move.toOpposition - move.fromOpposition) * eased;
+      if (progress < 1) moving = true;
+      else transition.current = null;
+    }
+    rig.update(pose.angles, pose.opposition, ease(grip.current));
+    if (moving) invalidate();
   });
 
   useEffect(() => () => rig.dispose(), [rig]);

@@ -335,3 +335,32 @@ test('universal-joint yokes, cross and palm never intersect across the full flex
     assert.ok(!hit(cross.filter(tri => offAxle(tri, 'x')), moving.filter(tri => offAxle(tri, 'x'))), 'cross meets the palm yoke' + label);
   }
 });
+
+test('closing on the cube blends continuously from the free pose into the bracing pose', t => {
+  const rig = setup(t);
+  const tips = ['ThumbTip', 'IndexTip', 'MiddleTip', 'RingTip', 'LittleTip'];
+  const sample = hold => {
+    const { fingers, opposition } = HAND_PRESETS.grasp;
+    rig.update(fingers, opposition, hold);
+    rig.group.updateMatrixWorld(true);
+    return tips.map(name => point(rig, name));
+  };
+  const free = sample(false), held = sample(true);
+  sample(0).forEach((p, i) => assert.ok(p.distanceTo(free[i]) < 1e-9, 'hold 0 is the free pose'));
+  sample(1).forEach((p, i) => assert.ok(p.distanceTo(held[i]) < 1e-9, 'hold 1 is the bracing pose'));
+  assert.ok(free.some((p, i) => p.distanceTo(held[i]) > .01), 'the two poses differ, so a jump would be visible');
+  let previous = free;
+  const steps = 40;
+  for (let k = 1; k <= steps; k++) {
+    const now = sample(k / steps);
+    now.forEach((p, i) => {
+      const total = free[i].distanceTo(held[i]);
+      assert.ok(p.distanceTo(previous[i]) < total / steps * 4 + .004, `${tips[i]} jumps at hold=${k / steps}`);
+      assert.ok([p.x, p.y, p.z].every(Number.isFinite));
+    });
+    previous = now;
+  }
+  // Out-of-range values clamp instead of overshooting.
+  sample(-3).forEach((p, i) => assert.ok(p.distanceTo(free[i]) < 1e-9));
+  sample(7).forEach((p, i) => assert.ok(p.distanceTo(held[i]) < 1e-9));
+});

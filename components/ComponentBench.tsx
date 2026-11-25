@@ -25,7 +25,9 @@ function Subject({ mode, index, built, control, onBuild }: {
   mode: RobotMode; index: number; built: number; control: { current: BenchControl }; onBuild: () => void;
 }) {
   const asset = useLoader(GLTFLoader, "/models/rakitron-arm.glb");
-  const { camera } = useThree();
+  const { camera, size } = useThree();
+  // Ukuran area pegang di layar dan jarak tempat tunggu, dihitung dari bentuk komponen.
+  const shape = useRef({ wide: 1, tall: 1, reach: 1 });
   const turntable = useRef<THREE.Group>(null);
   const previous = useRef(built);
   // Posisi bagian berikutnya relatif terhadap tempat pasangnya, dalam ruang dunia.
@@ -34,7 +36,10 @@ function Subject({ mode, index, built, control, onBuild }: {
   const state = useRef<"tray" | "drag" | "return">("tray");
   const dropped = useRef<THREE.Vector3 | null>(null);
   const settling = useRef<{ layer: number; from: THREE.Vector3; t: number } | null>(null);
-  const grip = useRef({ plane: new THREE.Plane(), anchor: new THREE.Vector3() });
+  const grip = useRef({ plane: new THREE.Plane(), anchor: new THREE.Vector3(), x: 0, y: 0 });
+  const proxy = useRef<THREE.Mesh>(null);
+  const halo = useRef<THREE.Mesh>(null);
+  const view = useMemo(() => new THREE.Vector3(), []);
   const scratch = useMemo(() => ({ turn: new THREE.Quaternion(), local: new THREE.Vector3(), hit: new THREE.Vector3() }), []);
 
   const subject = useMemo(() => {
@@ -59,7 +64,10 @@ function Subject({ mode, index, built, control, onBuild }: {
     holder.add(object);
     holder.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(object);
-    const radius = Math.max(.2, box.getSize(new THREE.Vector3()).length() / 2);
+    const extent = box.getSize(new THREE.Vector3());
+    const radius = Math.max(.2, extent.length() / 2);
+    // Komponen berputar di meja, jadi lebarnya dihitung sebagai jari-jari mendatar terbesar.
+    const span = Math.max(.1, Math.hypot(extent.x, extent.z) / 2), rise = Math.max(.05, extent.y / 2);
     object.position.sub(box.getCenter(new THREE.Vector3()));
     // Setiap bagian punya bayangan di tempat pasangnya, sebagai sasaran untuk diseret.
     const faint = new THREE.MeshBasicMaterial({ color: "#5b8f7a", transparent: true, opacity: .07, depthWrite: false });
@@ -73,22 +81,35 @@ function Subject({ mode, index, built, control, onBuild }: {
       piece.mesh.parent!.add(piece.target);
     }
     const layers = Math.max(...pieces.map(piece => piece.layer)) + 1;
-    return { holder, pieces, radius, faint, goal, layers, dispose() { faint.dispose(); goal.dispose(); hand?.dispose(); } };
+    return { holder, pieces, radius, span, rise, faint, goal, layers, dispose() { faint.dispose(); goal.dispose(); hand?.dispose(); } };
   }, [asset, mode, index]);
 
   useEffect(() => () => subject.dispose(), [subject]);
 
-  // Kamera digeser agar komponen dan bagian yang menunggu di kiri sama-sama terlihat.
+  // Bagian yang menunggu ditaruh di samping komponen yang ringkas, atau di atas komponen yang
+  // panjang, supaya keduanya tidak pernah bertumpuk. Kamera lalu membingkai keduanya.
   useLayoutEffect(() => {
-    const R = subject.radius;
-    const distance = R / Math.sin((camera as THREE.PerspectiveCamera).fov * Math.PI / 360) * 1.75;
-    camera.position.set(distance * .5, distance * .42, distance * .76);
+    const direction = new THREE.Vector3(.5, .42, .76).normalize();
+    const wide = subject.span;
+    const tall = subject.rise * Math.hypot(direction.x, direction.z) + subject.span * direction.y;
+    const aspect = Math.max(.5, size.width / Math.max(1, size.height));
+    const gap = .3 * Math.max(wide, tall);
+    const half = Math.tan((camera as THREE.PerspectiveCamera).fov * Math.PI / 360);
+    // Jarak kamera yang dibutuhkan bila bagian menunggu di samping, atau di atas.
+    const beside = Math.max((2 * wide + gap / 2) * 1.22 / aspect, tall * 1.5);
+    const above = Math.max((2 * tall + gap / 2) * 1.18, wide * 1.15 / aspect);
+    const sideways = beside <= above * 1.1;
+    const reach = sideways ? 2 * wide + gap : 2 * tall + gap;
+    camera.position.copy(direction).multiplyScalar((sideways ? beside : above) / half);
     camera.lookAt(0, 0, 0);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-    camera.position.addScaledVector(right, -R * .72);
-    tray.current.copy(right).multiplyScalar(-R * 1.5).addScaledVector(up, R * .1);
-  }, [camera, subject]);
+    const axis = sideways ? new THREE.Vector3(-1, 0, 0).applyQuaternion(camera.quaternion)
+      : new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    camera.position.addScaledVector(axis, reach / 2);
+    tray.current.copy(axis).multiplyScalar(reach);
+    shape.current = { wide, tall, reach };
+    // Bagian yang sedang menunggu ikut pindah ketika ukuran layar berubah.
+    if (state.current !== "drag") offset.current.copy(tray.current);
+  }, [camera, subject, size.width, size.height]);
 
   const place = (piece: Piece, world: THREE.Vector3) => {
     piece.mesh.parent!.getWorldQuaternion(scratch.turn).invert();
@@ -125,6 +146,24 @@ function Subject({ mode, index, built, control, onBuild }: {
       turntable.current.updateMatrixWorld(true);
     }
     subject.goal.opacity = calm ? .3 : .24 + .14 * Math.sin(clock.elapsedTime * 4.5);
+    // Area pegang dan lingkaran penanda mengikuti bagian yang menunggu, menghadap kamera.
+    const waiting = built < subject.layers;
+    camera.getWorldDirection(view);
+    const { wide, tall } = shape.current;
+    if (proxy.current) {
+      proxy.current.visible = waiting;
+      proxy.current.position.copy(offset.current);
+      proxy.current.quaternion.copy(camera.quaternion);
+      proxy.current.scale.set(wide * 1.2, Math.max(tall, wide * .3) * 1.2, 1);
+    }
+    if (halo.current) {
+      halo.current.visible = waiting;
+      halo.current.position.copy(offset.current).addScaledVector(view, subject.radius * 1.1);
+      halo.current.quaternion.copy(camera.quaternion);
+      halo.current.scale.set(wide * 1.2, Math.max(tall, wide * .3) * 1.2, 1);
+      const material = halo.current.material as THREE.MeshBasicMaterial;
+      material.opacity = state.current === "drag" ? .2 : calm ? .12 : .1 + .05 * Math.sin(clock.elapsedTime * 3);
+    }
     if (state.current !== "drag") {
       // Kembali ke tempat tunggu dengan halus.
       const ease = calm ? 1 : 1 - Math.exp(-step * 9);
@@ -144,14 +183,16 @@ function Subject({ mode, index, built, control, onBuild }: {
     }
   });
 
-  const layerOf = (object: THREE.Object3D) => subject.pieces.find(piece => piece.mesh === object)?.layer;
+  // Bagian kecil sulit disentuh tepat, jadi yang dipegang adalah area bulat besar di sekelilingnya.
   const down = (event: ThreeEvent<PointerEvent>) => {
-    if (built >= subject.layers || layerOf(event.object) !== built) return;
+    if (built >= subject.layers) return;
     event.stopPropagation();
     (event.target as Element).setPointerCapture(event.pointerId);
     const normal = camera.getWorldDirection(new THREE.Vector3());
-    grip.current.plane.setFromNormalAndCoplanarPoint(normal, event.point);
-    grip.current.anchor.copy(event.point).sub(offset.current);
+    grip.current.plane.setFromNormalAndCoplanarPoint(normal, offset.current);
+    const hit = event.ray.intersectPlane(grip.current.plane, scratch.hit) ?? event.point;
+    grip.current.anchor.copy(hit).sub(offset.current);
+    grip.current.x = event.nativeEvent.clientX; grip.current.y = event.nativeEvent.clientY;
     state.current = "drag";
     control.current.grabbing = true;
   };
@@ -165,19 +206,28 @@ function Subject({ mode, index, built, control, onBuild }: {
     event.stopPropagation();
     (event.target as Element).releasePointerCapture(event.pointerId);
     control.current.grabbing = false;
-    // Cukup dekat dengan bayangannya: bagian terpasang. Kalau belum, kembali ke tempat tunggu.
-    if (offset.current.length() < subject.radius * .55) {
+    const tapped = Math.hypot(event.nativeEvent.clientX - grip.current.x, event.nativeEvent.clientY - grip.current.y) < 8;
+    // Ketukan singkat, atau dilepas cukup dekat dengan bayangannya: bagian terpasang.
+    // Kalau belum, bagian kembali ke tempat tunggu.
+    if (tapped || offset.current.length() < shape.current.reach * .55) {
       dropped.current = offset.current.clone();
       state.current = "tray";
       onBuild();
     } else state.current = "return";
   };
 
-  return <group ref={turntable}>
-    <primitive object={subject.holder} dispose={null} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
-      onPointerOver={(event: ThreeEvent<PointerEvent>) => { if (layerOf(event.object) === built) document.body.style.cursor = "grab"; }}
-      onPointerOut={() => { document.body.style.cursor = ""; }} />
-  </group>;
+  return <>
+    <group ref={turntable}><primitive object={subject.holder} dispose={null} /></group>
+    <mesh ref={halo} renderOrder={-1} raycast={() => null}>
+      <circleGeometry args={[1, 56]} />
+      <meshBasicMaterial color="#ff713d" transparent opacity={.1} depthWrite={false} />
+    </mesh>
+    <mesh ref={proxy} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+      onPointerOver={() => { document.body.style.cursor = "grab"; }} onPointerOut={() => { document.body.style.cursor = ""; }}>
+      <circleGeometry args={[1, 40]} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+    </mesh>
+  </>;
 }
 
 export default function ComponentBench({ mode, index, built, onBuild }: { mode: RobotMode; index: number; built: number; onBuild: () => void }) {

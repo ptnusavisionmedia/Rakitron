@@ -497,7 +497,7 @@ export type Action =
 
 function buildHint(mode: RobotMode, selected: number, built: number) {
   const steps = buildStepsFor(mode, selected);
-  return `Bagian ${built + 1} dari ${steps.length}: seret ${steps[built].name.toLocaleLowerCase('id')} ke bayangan hijau.`;
+  return `Bagian ${built + 1} dari ${steps.length}: seret ${steps[built].name.toLocaleLowerCase('id')} ke bayangan hijau, atau ketuk untuk memasangnya.`;
 }
 
 /** Komponen dirakit bagian demi bagian dulu, baru boleh diputar dan dipasang ke robot. */

@@ -341,7 +341,8 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
     return false;
   }
 
-  function update(values: HandAngles, thumbOpposition = 0, carriesCube = false) {
+  // Mengatur pose bebas atau pose memegang kubus, dan mengembalikan bukaan tambahan ibu jari.
+  function pose(values: HandAngles, thumbOpposition: number, carriesCube: boolean) {
     for (const {data,finger,mcp,pip,dip} of digits) {
       const angles = getFingerHinges(data,values[data.key],carriesCube);
       finger.rotation.z = angles.splay;
@@ -356,24 +357,47 @@ export function createRoboticHand({angles, opposition = 0, preview = false, high
     thumbMcp.rotation.x = thumbAngles.mcp;
     ip.rotation.x = thumbAngles.ip;
     setAbduction(0);
-
-    if (!carriesCube) {
-      for (const [i,points] of neighborPoints.entries()) {
-        const digit = digits[i];
-        jointPositions(digit.finger,digit.hinges,digit.data.lengths,points);
-      }
-      if (touchesNeighbor()) {
-        // Let the saddle open just enough to accommodate the other digits.
-        let blocked = 0, clear = 30;
-        for (let step=0; step<10; step++) {
-          const angle = (blocked+clear)/2;
-          setAbduction(angle);
-          if (touchesNeighbor()) blocked=angle;
-          else clear=angle;
-        }
-        setAbduction(clear);
-      }
+    if (carriesCube) return 0;
+    for (const [i,points] of neighborPoints.entries()) {
+      const digit = digits[i];
+      jointPositions(digit.finger,digit.hinges,digit.data.lengths,points);
     }
+    if (!touchesNeighbor()) return 0;
+    // Let the saddle open just enough to accommodate the other digits.
+    let blocked = 0, clear = 30;
+    for (let step=0; step<10; step++) {
+      const angle = (blocked+clear)/2;
+      setAbduction(angle);
+      if (touchesNeighbor()) blocked=angle;
+      else clear=angle;
+    }
+    setAbduction(clear);
+    return clear;
+  }
+
+  /**
+   * `carriesCube` boleh berupa angka 0..1: jari berpindah bertahap dari pose bebas ke pose
+   * menahan kubus, sehingga genggaman menutup pelan dan tidak melompat.
+   */
+  function update(values: HandAngles, thumbOpposition = 0, carriesCube: boolean | number = false) {
+    const hold = typeof carriesCube === "number" ? THREE.MathUtils.clamp(carriesCube,0,1) : carriesCube ? 1 : 0;
+    if (hold <= 0 || hold >= 1) { pose(values,thumbOpposition,hold >= 1); return; }
+    const extra = pose(values,thumbOpposition,false);
+    const mix = (a: number, b: number) => a + (b - a) * hold;
+    for (const {data,finger,mcp,pip,dip} of digits) {
+      const free = getFingerHinges(data,values[data.key],false), held = getFingerHinges(data,values[data.key],true);
+      finger.rotation.z = mix(free.splay,held.splay);
+      mcp.rotation.x = mix(free.mcp,held.mcp);
+      pip.rotation.x = mix(free.pip,held.pip);
+      dip.rotation.x = mix(free.dip,held.dip);
+    }
+    const free = getThumbHinges(values.thumb,thumbOpposition,false), held = getThumbHinges(values.thumb,thumbOpposition,true);
+    cmcOrientation.setFromAxisAngle(yawAxis,mix(free.yaw,held.yaw))
+      .multiply(turn.setFromAxisAngle(outwardAxis,mix(free.abduction,held.abduction)))
+      .multiply(turn.setFromAxisAngle(yawAxis,mix(free.pronation,held.pronation)));
+    thumbMcp.rotation.x = mix(free.mcp,held.mcp);
+    ip.rotation.x = mix(free.ip,held.ip);
+    setAbduction(extra * (1 - hold));
   }
   update(angles,opposition,holding);
   return {
