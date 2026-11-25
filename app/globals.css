@@ -630,3 +630,80 @@ h1 { font-size: clamp(28px, 2.7vw, 40px); letter-spacing: -.045em; }
 @keyframes bench-arrow { 0%, 100% { opacity: .15; } 40% { opacity: .95; } }
 .bench-canvas { cursor: default; }
 @media (prefers-reduced-motion: reduce) { .bench-arrow i { animation: none; opacity: .6; } }
+
+/* ── Tata letak satu layar: semua panel menempel di jendela, tidak ada yang keluar layar ── */
+.header-status, .status-keys { display: none; }
+@media (min-width: 761px) and (min-height: 520px) {
+  html, body { height: 100%; overflow: hidden; }
+  .workshop-app { height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); background: #dfe3d9; }
+  .site-header { position: static; background: var(--paper); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .header-inner { max-width: none; height: 46px; padding-inline: 12px; }
+  .brand > svg { width: 26px; height: 26px; }
+  .brand > span { font-size: 19px; letter-spacing: -.9px; }
+  .main-nav { margin-left: 22px; gap: 4px; align-self: center; }
+  .main-nav a, .main-nav button { min-height: 30px; padding: 0 10px; border: 0; border-radius: 7px; font-size: 12.5px; }
+  .main-nav a.active { background: #edf0e8; }
+  .main-nav button:hover, .main-nav a:hover { background: #edf0e8; }
+  .header-status { display: flex; align-items: center; gap: 10px; margin-left: 18px; padding-left: 18px; min-width: 0; border-left: 1px solid var(--line); }
+  .header-status b { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .header-status .progress-track { flex: none; width: 108px; margin: 0; }
+  .header-status .progress-count { white-space: nowrap; }
+  .header-actions { gap: 6px; }
+  .sound-button, .icon-button { width: 32px; height: 32px; border-radius: 7px; }
+  .restart-button { min-height: 32px; padding-inline: 11px; border-radius: 7px; font-size: 12.5px; }
+
+  .studio { max-width: none; margin: 0; padding: 0; min-height: 0; display: flex; flex-direction: column; }
+  .studio-heading { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .workspace { flex: 1; min-height: 0; gap: 1px; background: #cfd5c9; grid-template-columns: minmax(0, 1fr) clamp(300px, 25vw, 380px); grid-template-rows: minmax(0, 1fr) auto; grid-template-areas: "scene guide" "parts guide"; align-items: stretch; }
+  .workspace .scene-panel, .workspace[data-hand-ready="true"] .scene-panel { position: relative; top: auto; align-self: stretch; height: auto; min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
+  .scene-caption { top: 12px; left: 12px; }
+  .socket-focus { top: 12px; right: 12px; }
+  .camera-toolbar { left: 12px; bottom: 12px; }
+  .axis { right: 12px; bottom: 10px; }
+
+  .guide-panel { border: 0; border-radius: 0; box-shadow: none; min-height: 0; }
+  .guide-tabs { padding: 6px; }
+  .guide-tabs button { min-height: 34px; border-radius: 7px; }
+  .guide-body, .motion-pane { min-height: 0; overflow-y: auto; padding: 16px; scrollbar-width: thin; scrollbar-color: #c9d0c2 transparent; }
+  .reference-card { height: clamp(84px, 15vh, 150px); }
+  .assembly-actions { position: sticky; bottom: -16px; z-index: 1; margin-bottom: -16px; padding: 12px 0 16px; background: linear-gradient(#ffffff00, var(--paper) 12px); }
+
+  .parts-drawer { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 14px; padding: 10px 14px; border: 0; border-radius: 0; box-shadow: none; }
+  .drawer-heading { display: grid; gap: 3px; margin: 0; justify-items: start; align-content: center; padding-right: 14px; align-self: stretch; border-right: 1px solid var(--line); }
+  .drawer-heading > div { gap: 7px; }
+  .drawer-icon { width: 20px; height: 20px; }
+  .drawer-icon svg { width: 17px; height: 17px; }
+  .drawer-heading h2 { font-size: 14px; letter-spacing: -.02em; white-space: nowrap; }
+  .drawer-count { font-size: 10.5px; padding-left: 27px; }
+  .parts-grid { gap: 8px; }
+  .part-card { height: clamp(68px, 11.5vh, 104px); border-radius: 9px; padding: 4px 6px 7px; }
+  .part-label { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .workshop-footer { flex: none; margin: 0; height: 26px; padding-inline: 12px; gap: 18px; justify-content: flex-start; border-top: 1px solid #cfd5c9; background: #f7f8f4; font-size: 11.5px; }
+  .workshop-footer button { margin-left: auto; font-size: 11.5px; padding: 0; }
+  .status-keys { display: inline-flex; align-items: center; gap: 14px; color: #6d7768; }
+  .status-keys > span { display: inline-flex; align-items: center; gap: 5px; }
+  .status-keys kbd { font-size: 10px; padding: 1px 4px; }
+
+  /* Layar pilih robot ikut pas dalam satu layar. */
+  .studio[data-screen="menu"] { overflow-y: auto; justify-content: center; padding: clamp(10px, 2.4vh, 28px) 24px; background: var(--soft); }
+  .robot-menu { width: 100%; margin-block: auto; padding: 0; }
+  .menu-intro { margin-bottom: clamp(12px, 2.6vh, 30px); }
+  .menu-intro h1 { font-size: clamp(26px, 4.6vh, 44px); margin-top: 6px; }
+  .menu-intro p { font-size: 14px; margin-top: 8px; }
+  .robot-picture { height: clamp(96px, 24vh, 250px); }
+  .robot-info { gap: 8px; padding: clamp(12px, 2vh, 20px) 20px clamp(12px, 2vh, 20px); }
+  .robot-info h2 { font-size: 21px; }
+  .robot-info ul { gap: 5px; margin: 0 0 4px; }
+  .robot-info .primary-button { min-height: 44px; }
+}
+@media (min-width: 761px) and (min-height: 520px) and (max-width: 1050px) {
+  .header-status b { display: none; }
+  .workspace { grid-template-columns: minmax(0, 1fr) 280px; }
+  .drawer-count { display: none; }
+  .status-keys { display: none; }
+}
+@media (min-width: 761px) and (min-height: 520px) and (max-height: 640px) {
+  .robot-info > p { display: none; }
+  .menu-intro p { display: none; }
+}

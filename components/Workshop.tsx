@@ -334,6 +334,11 @@ export default function Workshop() {
         <a href="#bengkel" className="active"><Wrench size={16}/> Bengkel</a>
         <button onClick={() => setDialog("help")}><BookOpen size={16}/> Cara bermain</button>
       </nav>
+      {screen === "workshop" && <div className="header-status" aria-hidden="true">
+        <b>{isHand ? "Lengan tangan lima jari" : "Lengan capit"}</b>
+        <span className="progress-track">{parts.map((part, i) => <i key={part.id} className={i < count ? "filled" : ""}/>)}</span>
+        <span className="progress-count"><strong>{count}</strong> / 6</span>
+      </div>}
       <div className="header-actions">
         <button className={`sound-button ${music && sound ? "is-on" : ""}`} title={music ? "Matikan musik" : "Nyalakan musik"} aria-label={music ? "Matikan musik" : "Nyalakan musik"} aria-pressed={music} onClick={toggleMusic}>{music && sound ? <Music2 size={17}/> : <Music size={17}/>}</button>
         <button className={`sound-button ${sound ? "is-on" : ""}`} title={sound ? "Matikan suara" : "Aktifkan suara"} aria-label={sound ? "Matikan suara" : "Aktifkan suara"} aria-pressed={sound} onClick={toggleSound}>{sound ? <Volume2 size={17}/> : <VolumeX size={17}/>}</button>
@@ -341,7 +346,7 @@ export default function Workshop() {
         {screen === "workshop" && <button className="restart-button" onClick={() => setDialog("restart")}><RotateCcw size={15}/><span>Mulai ulang</span></button>}
       </div>
     </div></header>
-    <main className="studio" id="bengkel">
+    <main className="studio" id="bengkel" data-screen={screen}>
       {screen === "menu" ? <RobotMenu game={game} onChoose={chooseRobot}/> : <>
       <section className="studio-heading" aria-labelledby="workshop-title"><div>
         <h1 id="workshop-title">{isHand ? "Lengan tangan lima jari" : "Lengan capit"}<span>.</span></h1>
@@ -432,7 +437,8 @@ export default function Workshop() {
           })}</div>
         </section>
       </div>
-      <div className="workshop-footer"><span><Orbit size={14}/>Seret meja untuk memutar pandangan.</span><button onClick={() => setDialog("help")}><CircleHelp size={14}/>Bantuan bengkel</button></div>
+      <div className="workshop-footer"><span><Orbit size={14}/>Seret meja untuk memutar pandangan.</span>
+        <span className="status-keys"><span><kbd>R</kbd> Putar</span><span><kbd>Enter</kbd> Pasang</span><span><kbd>Ctrl Z</kbd> Urungkan</span></span><button onClick={() => setDialog("help")}><CircleHelp size={14}/>Bantuan bengkel</button></div>
 
       </>}
     </main>
