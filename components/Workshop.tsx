@@ -357,7 +357,7 @@ export default function Workshop() {
       </div></section>
       <div className="workspace" data-pane={pane} data-hand-ready={isHand && complete}>
         <section className="scene-panel" aria-label="Meja perakitan tiga dimensi">
-          <WorkshopScene game={game} bus={bus} view={view} zoom={zoom} cameraReset={cameraReset} socketFocus={socketFocus}/>
+          <WorkshopScene game={game} bus={bus} view={view} zoom={zoom} cameraReset={cameraReset} socketFocus={socketFocus} covered={showBench}/>
           <Cheer bus={bus} nameOf={i => parts[i]?.name ?? "Komponen"}/>
           {showBench && benchPart && <div className="bench" role="group" aria-label={"Ruang rakit " + benchPart.name}>
             <ComponentBench mode={game.robotMode} index={selected!} built={game.built} onBuild={game.build}/>

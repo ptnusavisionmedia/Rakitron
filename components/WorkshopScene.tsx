@@ -13,7 +13,7 @@ import { SNAP_DISTANCE, TRAY, handBraces } from "../lib/game";
 import { PLACE_LAND, createBus, type Bus } from "../lib/gameEvents";
 import RoboticHand from "./RoboticHand";
 import { Effects, useFx } from "./Effects";
-import { noteMotion, prefersReducedMotion, setSceneVisible, shadowsNeedUpdate, useIdleInvalidate } from "./idle";
+import { noteMotion, prefersReducedMotion, setSceneCovered, setSceneVisible, shadowsNeedUpdate, useIdleInvalidate } from "./idle";
 import WorkshopTable from "./WorkshopTable";
 import { ReceiverTray, Ring, WoodenCube } from "./SceneObjects";
 
@@ -26,6 +26,8 @@ export type WorkshopSceneProps = {
   cameraReset?: number;
   socketFocus?: number;
   zoom?: number;
+  /** Benar bila adegan tertutup panel lain, sehingga animasi hiasannya boleh berhenti. */
+  covered?: boolean;
   bus?: Bus;
   onReady?: () => void;
 };
@@ -126,8 +128,9 @@ function CameraRig({ view, reset, zoom, lock, focus, socket, wrist, controls, in
     const c = controls.current;
     if (!c || inspecting!==null || !(camera instanceof THREE.PerspectiveCamera)) return;
     const aspect = size.width / Math.max(size.height,1);
-    const distance = Math.max(6.0, 6.65 / (2*Math.tan(camera.fov*D/2)*aspect));
-    const center = view === "top" ? new THREE.Vector3(.10,0,.02) : new THREE.Vector3(.09,.34,.11);
+    // Membingkai alas potong dan seluruh jangkauan lengan, bukan seluruh meja kayu.
+    const distance = Math.max(5.7, 5.8 / (2*Math.tan(camera.fov*D/2)*aspect));
+    const center = view === "top" ? new THREE.Vector3(.10,0,.02) : new THREE.Vector3(.09,.42,.11);
     // Clear residual orbital inertia before applying a named view.
     c.enableDamping = false;
     c.update();
@@ -775,9 +778,23 @@ export default function WorkshopScene(props:WorkshopSceneProps) {
     return () => { observer.disconnect(); setSceneVisible(true); };
   },[]);
   const slower = useCallback(() => setLevel(l => Math.min(DPR_LEVELS.length-1,l+1)),[]);
+  // Di layar lebar resolusi dibatasi oleh jumlah piksel, supaya beban GPU tidak ikut membesar.
+  const [budget,setBudget] = useState(2);
+  useEffect(() => {
+    const node = wrapper.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width,height } = entry.contentRect;
+      setBudget(Math.max(1,Math.round(Math.sqrt(2.2e6/Math.max(1,width*height))*20)/20));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  },[]);
+  const covered = props.covered === true;
+  useEffect(() => { setSceneCovered(covered); return () => setSceneCovered(false); },[covered]);
   return <div ref={wrapper} style={{position:"absolute",inset:0,touchAction:"none"}} aria-label="Meja perakitan lengan robot tiga dimensi">
     <SceneBoundary key={version} retry={() => setVersion(x => x+1)}>
-      <Canvas frameloop="demand" shadows={SHADOWS} dpr={Math.min(DPR_LEVELS[level],typeof window === "undefined" ? 1 : window.devicePixelRatio)}
+      <Canvas frameloop="demand" shadows={SHADOWS} dpr={Math.min(DPR_LEVELS[level],budget,typeof window === "undefined" ? 1 : window.devicePixelRatio)}
         gl={RENDERER} camera={CAMERA}
         fallback={<Unavailable />} style={{width:"100%",height:"100%",touchAction:"none"}}>
         <AdaptiveQuality onSlow={slower} />

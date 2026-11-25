@@ -31,10 +31,15 @@ let reduced: boolean | null = null;
 let wake: (() => void) | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 
-export function setSceneVisible(value: boolean) {
-  visible = value;
-  if (value) wake?.(); // lanjutkan animasi hiasan setelah adegan terlihat lagi
+let onScreen = true;
+let covered = false;
+function refreshVisible() {
+  visible = onScreen && !covered;
+  if (visible) wake?.(); // lanjutkan animasi hiasan setelah adegan terlihat lagi
 }
+export function setSceneVisible(value: boolean) { onScreen = value; refreshVisible(); }
+/** Adegan tertutup panel lain (ruang rakit): animasi hiasannya berhenti sampai terlihat lagi. */
+export function setSceneCovered(value: boolean) { covered = value; refreshVisible(); }
 
 export function prefersReducedMotion() {
   if (typeof window === "undefined") return false;
