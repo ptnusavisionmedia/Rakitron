@@ -51,28 +51,34 @@ function motion(game: Game): Record<string, number> {
   return values;
 }
 
+type AssemblyProgress = Pick<Game, "count" | "selected" | "rotation" | "built">;
+
+export function emitAssemblyChange(before: AssemblyProgress, game: AssemblyProgress, bus: Bus, stepCount: number) {
+  if (game.count > before.count) {
+    const bulk = game.count - before.count > 1;
+    const complete = game.count === 6;
+    bus.emit({ type: "placed", index: game.count - 1, complete, bulk });
+    if (complete) bus.emit({ type: "complete", bulk });
+  } else if (game.count < before.count) {
+    bus.emit({ type: "undo" });
+  } else if (game.selected !== null && game.selected !== before.selected) {
+    bus.emit({ type: "select", index: game.selected });
+  } else if (game.selected !== null && game.selected === before.selected && game.rotation !== before.rotation) {
+    bus.emit({ type: "rotate" });
+  } else if (game.selected !== null && game.selected === before.selected && game.built > before.built) {
+    bus.emit({ type: "built", index: game.selected, step: game.built - 1, done: game.built === stepCount });
+  }
+}
+
 /** Mengubah perpindahan status permainan menjadi peristiwa untuk suara, efek 3D, dan sorakan. */
-export function useGameEvents(game: Game, bus: Bus) {
+export function useGameEvents(game: Game, bus: Bus, active = true) {
   const previous = useRef<Game | null>(null);
   useEffect(() => {
     const before = previous.current;
     previous.current = game;
-    if (!before) return;
+    if (!before || !active) return;
 
-    if (game.count > before.count) {
-      const bulk = game.count - before.count > 1;
-      const complete = game.count === 6;
-      bus.emit({ type: "placed", index: game.count - 1, complete, bulk });
-      if (complete) bus.emit({ type: "complete", bulk });
-    } else if (game.count < before.count) {
-      bus.emit({ type: "undo" });
-    } else if (game.selected !== null && game.selected !== before.selected) {
-      bus.emit({ type: "select", index: game.selected });
-    } else if (game.selected !== null && game.selected === before.selected && game.rotation !== before.rotation) {
-      bus.emit({ type: "rotate" });
-    } else if (game.selected !== null && game.selected === before.selected && game.built > before.built) {
-      bus.emit({ type: "built", index: game.selected, step: game.built - 1, done: game.built === buildStepsFor(game.robotMode, game.selected).length });
-    }
+    emitAssemblyChange(before, game, bus, game.selected === null ? 0 : buildStepsFor(game.robotMode, game.selected).length);
 
     const was = before.cube.mode, now = game.cube.mode;
     if (was !== "held" && now === "held") bus.emit({ type: "grab", pos: game.cube.position });
@@ -85,5 +91,5 @@ export function useGameEvents(game: Game, bus: Bus) {
       const moved = Object.keys(b).find(key => Math.abs(b[key] - a[key]) > 1e-6);
       if (moved !== undefined) bus.emit({ type: "servo", amount: b[moved] });
     }
-  });
+  }, [game, bus, active]);
 }

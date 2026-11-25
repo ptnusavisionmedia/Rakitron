@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Rakitron — Bengkel Robot 3D",
-  description: "Rakit enam komponen, gerakkan lengan robotmu, dan pindahkan kubus di bengkel 3D Rakitron.",
+  description: "Rakit lengan capit, tangan lima jari, atau robot seluruh tubuh, lalu uji gerakannya di bengkel 3D Rakitron.",
   icons: { icon: "/rakitron.svg" },
 };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f8f7f2" };

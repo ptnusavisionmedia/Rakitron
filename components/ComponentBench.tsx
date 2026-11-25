@@ -8,6 +8,9 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { HAND_PRESETS, type RobotMode } from "../lib/game";
 import { createRoboticHand } from "../lib/handModel";
+import { BODY_PARTS } from "../lib/bodyGame";
+
+type BenchMode = RobotMode | "body";
 
 const NAMES = ["Base", "Shoulder", "UpperArm", "Elbow", "Forearm", "Gripper"] as const;
 // Sama dengan urutan di meja utama: rangka, poros dan bantalan, pelindung, lalu baut dan penanda.
@@ -22,9 +25,9 @@ const reducedMotion = () => typeof window !== "undefined" && window.matchMedia("
 const settle = (t: number) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
 
 function Subject({ mode, index, built, control, onBuild }: {
-  mode: RobotMode; index: number; built: number; control: { current: BenchControl }; onBuild: () => void;
+  mode: BenchMode; index: number; built: number; control: { current: BenchControl }; onBuild: () => void;
 }) {
-  const asset = useLoader(GLTFLoader, "/models/rakitron-arm.glb");
+  const asset = useLoader(GLTFLoader, mode === "body" ? "/models/rakitron-body.glb" : "/models/rakitron-arm.glb");
   const { camera, size } = useThree();
   // Ukuran area pegang di layar dan jarak tempat tunggu, dihitung dari bentuk komponen.
   const shape = useRef({ wide: 1, tall: 1, reach: 1 });
@@ -52,13 +55,13 @@ function Subject({ mode, index, built, control, onBuild }: {
       object = hand.group;
       for (const { mesh, stage } of hand.pieces()) add(mesh, stage);
     } else {
-      const source = asset.scene.getObjectByName(NAMES[index]);
+      const source = asset.scene.getObjectByName(mode === "body" ? BODY_PARTS[index].id : NAMES[index]);
       object = source ? source.clone(true) : new THREE.Group();
       object.position.set(0, 0, 0); object.quaternion.identity(); object.scale.set(1, 1, 1);
       object.traverse(o => {
         if (!(o instanceof THREE.Mesh)) return;
         const name = Array.isArray(o.material) ? o.material[0]?.name : o.material.name;
-        add(o, LAYER[name] ?? 3);
+        add(o, mode === "body" ? o.userData.assemblyStage : LAYER[name] ?? 3);
       });
     }
     holder.add(object);
@@ -230,7 +233,7 @@ function Subject({ mode, index, built, control, onBuild }: {
   </>;
 }
 
-export default function ComponentBench({ mode, index, built, onBuild }: { mode: RobotMode; index: number; built: number; onBuild: () => void }) {
+export default function ComponentBench({ mode, index, built, onBuild }: { mode: BenchMode; index: number; built: number; onBuild: () => void }) {
   const control = useRef<BenchControl>({ yaw: -.5, rotating: false, grabbing: false });
   const last = useRef(0);
   useEffect(() => () => { document.body.style.cursor = ""; }, []);

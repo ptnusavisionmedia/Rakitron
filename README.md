@@ -1,6 +1,6 @@
 # Rakitron
 
-Rakitron adalah bengkel lengan robot 3D berbahasa Indonesia untuk anak usia 8–12 tahun. Anak memasang enam komponen, menguji sendi yang sudah terpasang, dan memindahkan kubus kuning ke baki biru. Model, ilustrasi komponen, dan material disertakan di proyek.
+Rakitron adalah bengkel robot 3D berbahasa Indonesia untuk anak usia 8–12 tahun. Anak merakit enam komponen dan menguji sendi yang sudah terpasang. Misinya adalah memindahkan kubus dengan lengan robot atau menyapa dengan robot seluruh tubuh.
 
 ## Mainkan dari paket ZIP
 
@@ -21,7 +21,7 @@ npm run dev
 
 Buka **http://localhost:3000**. Untuk membangun ulang, jalankan `npm run build`, kemudian `npm start`. Hasil ekspor statis berada di `out/`.
 
-## Bermain
+## Bermain dengan lengan robot
 
 1. Pilih alas putar dari laci. Dekatkan ke dudukan atau pilih soket pasangannya. Gunakan kontrol putar untuk menyelaraskan sambungan.
 2. Pasang bahu, lengan atas, siku, lengan bawah, lalu alat ujung sesuai model yang dipilih. Buka kendali untuk mencoba sendi setelah bagian yang digerakkannya terpasang.
@@ -42,7 +42,15 @@ Untuk mencoba misi dengan tangan terbuka, pilih **Lengan**. Dengan pergelangan n
 
 Pada tab **Perakitan**, buka **Model acuan** untuk mengunduh model tangan dan lengan lengkap dalam format GLB. Model ini memuat empat animasi gestur dan satu demonstrasi gerak pergelangan.
 
+## Robot seluruh tubuh
+
+Pilih **Robot seluruh tubuh → Rakit robot ini**. Susun empat bagian tiap modul di ruang rakit, lalu pasang modul ke soketnya. Mulai dari kaki kanan, kaki kiri, torso, tangan kanan, tangan kiri, lalu kepala. Kanan dan kiri mengikuti sisi tubuh robot. **Urungkan** melepas modul terakhir agar dapat dipasang kembali. **Coba robot terakit** membuka kontrol langsung.
+
+Di **Uji gerak**, atur kedua lutut, pinggang, kedua lengan, dan kepala. Untuk menyelesaikan misi salam, angkat tangan kanan minimal 65°, biarkan tangan kiri pada 0–20°, lalu tolehkan kepala ke kanan minimal 20°. Panel **Otomatis** menyediakan salam tangan kanan dan pemeriksaan keseimbangan. Model 3D tersedia di **Rakit → Model acuan**.
+
 ## Aset dan pengujian
+
+Jalankan `npm run assets:body` untuk mengekspor ulang model humanoid dan gambar komponennya dari geometri simulator.
 
 - `npm run assets` membuat ulang seluruh aset. Gunakan `npm run assets:hand` untuk memperbarui model tangan di `public/models/rakitron-hand.glb` beserta kedua ilustrasinya.
 - `npm test` menguji urutan dan orientasi pemasangan, ketersediaan kendali, penjepitan, pelepasan, serta kondisi keberhasilan misi.
@@ -75,4 +83,4 @@ Setiap komponen dirakit dulu dari bagian-bagiannya sebelum dipasang ke robot. Se
 
 ## Alur permainan
 
-Layar awal menampilkan dua robot untuk dipilih: lengan capit dan lengan tangan lima jari. Setelah memilih, setiap komponen yang diambil dari laci masuk ke **ruang rakit**, yaitu tampilan 3D khusus untuk satu komponen di meja putar (`components/ComponentBench.tsx`). Bagian berikutnya menunggu di samping komponen. Anak menyeretnya sendiri ke bayangan hijau di tempat pasangnya; kalau cukup dekat bagian itu terpasang, kalau belum ia kembali ke tempat tunggu. Tombol di panel memasang bagian itu secara otomatis. Setelah semua bagian terpasang, komponen kembali ke meja utama untuk dipasang ke robot. Tombol **Ganti robot** di kepala halaman membuka layar pilihan lagi tanpa menghapus kemajuan.
+Layar awal menampilkan tiga pilihan robot, yaitu lengan capit, lengan tangan lima jari, dan robot seluruh tubuh. Setelah memilih, setiap komponen yang diambil dari laci masuk ke **ruang rakit**, yaitu tampilan 3D khusus untuk satu komponen di meja putar (`components/ComponentBench.tsx`). Bagian berikutnya menunggu di samping komponen. Anak menyeretnya sendiri ke bayangan hijau di tempat pasangnya; kalau cukup dekat bagian itu terpasang, kalau belum ia kembali ke tempat tunggu. Tombol di panel memasang bagian itu secara otomatis. Setelah semua bagian terpasang, komponen kembali ke meja utama untuk dipasang ke robot. Tombol **Ganti robot** di kepala halaman membuka layar pilihan lagi tanpa menghapus kemajuan.
