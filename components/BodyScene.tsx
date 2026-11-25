@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, useEffect, useLayoutEffect, useMemo, useRef, type Dispatch, type ReactNode } from "react";
+import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -147,13 +147,18 @@ function CameraControls({controls,view="perspective",zoom=0,cameraReset=0,socket
   const lastReset = useRef(cameraReset);
   useLayoutEffect(() => {
     const orbit = new OrbitControls(camera,gl.domElement);
+    // Sama dengan kamera lengan robot: putaran teredam sehingga berhenti dengan halus.
     orbit.enablePan = false;
-    orbit.enableDamping = false;
+    orbit.enableDamping = true;
+    orbit.dampingFactor = .11;
     orbit.minDistance = .95;
     orbit.maxDistance = 15;
     orbit.minPolarAngle = .025;
     orbit.maxPolarAngle = Math.PI*.485;
-    orbit.rotateSpeed = .76;
+    orbit.rotateSpeed = .70;
+    orbit.zoomSpeed = .8;
+    orbit.mouseButtons = {LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.DOLLY,RIGHT:THREE.MOUSE.ROTATE};
+    orbit.touches = {ONE:THREE.TOUCH.ROTATE,TWO:THREE.TOUCH.DOLLY_PAN};
     const refresh=() => invalidate();
     orbit.addEventListener("change",refresh);
     controls.current = orbit;
@@ -170,9 +175,11 @@ function CameraControls({controls,view="perspective",zoom=0,cameraReset=0,socket
     const distance = Math.max(halfHeight, halfWidth/aspect) / Math.tan(camera.fov*DEGREES/2) + (complete ? .29 : .47);
     const dir = (top ? new THREE.Vector3(.015,1,.017) : view==="front" ? new THREE.Vector3(0,.12,1) :
       new THREE.Vector3(.37,complete ? .20 : .43,1)).normalize();
+    settle(orbit);
     orbit.target.set(0,top ? .65 : complete ? 1.36 : 1.13,0);
     camera.position.copy(orbit.target).addScaledVector(dir,distance);
-    orbit.update(); invalidate();
+    camera.lookAt(orbit.target);
+    orbit.update(); orbit.enableDamping=true; invalidate();
   },[camera,controls,size.width,size.height,view,cameraReset,complete,invalidate]);
   useLayoutEffect(() => {
     const orbit = controls.current;
@@ -200,11 +207,23 @@ function CameraControls({controls,view="perspective",zoom=0,cameraReset=0,socket
     }
     dir.normalize();
     const distance = complete ? Math.max(1.02, .8 / aspect) : Math.max(2.6, 2.1 / aspect);
+    settle(orbit);
     orbit.target.copy(target);
     camera.position.copy(target).addScaledVector(dir,distance);
-    orbit.update(); invalidate();
+    camera.lookAt(target);
+    orbit.update(); orbit.enableDamping=true; invalidate();
   },[socketFocus,count,complete,camera,controls,invalidate,size.width,size.height,optics]);
+  // Sisa putaran teredam diteruskan frame demi frame; saat komponen diseret kamera diam.
+  useFrame(() => {
+    const orbit = controls.current;
+    if (orbit?.enabled) orbit.update();
+  });
   return null;
+}
+/** Menghabiskan sisa inersia putaran supaya tampilan yang dipilih tidak ikut bergeser. */
+function settle(orbit: OrbitControls) {
+  orbit.enableDamping = false;
+  orbit.update();
 }
 
 type Drag = {
@@ -249,6 +268,14 @@ function Bench({state,dispatch,view,zoom,cameraReset,socketFocus,onReady,covered
   const previousCount = useRef(state.count);
   const gesture = useRef<Drag|null>(null);
   const landing = useRef<{index:number; t:number; start:THREE.Vector3; end:THREE.Vector3}|null>(null);
+  // Peta bayangan hanya dihitung ulang ketika isi adegan berubah, bukan saat kamera berputar.
+  const sceneInvalidate = invalidate;
+  const changed = useMemo(() => () => { gl.shadowMap.needsUpdate = true; sceneInvalidate(); },[gl,sceneInvalidate]);
+  useLayoutEffect(() => {
+    gl.shadowMap.autoUpdate = false;
+    gl.shadowMap.needsUpdate = true;
+    return () => { gl.shadowMap.autoUpdate = true; };
+  },[gl]);
 
   function rest(index: number) {
     const part = outer.current[index];
@@ -276,8 +303,8 @@ function Bench({state,dispatch,view,zoom,cameraReset,socketFocus,onReady,covered
       landing.current={index:added,t:0,start:end.clone().add(direction),end};
       outer.current[added]?.position.copy(landing.current.start);
     } else if (landing.current && landing.current.index>=state.count) landing.current=null;
-    invalidate();
-  },[state.count,state.rotation,state.selected,modules,invalidate]);
+    changed();
+  },[state.count,state.rotation,state.selected,modules,changed]);
   function liveSocket(index:number) {
     const at=dockingPoint(index,latest.current.pose.torso);
     // The planted leg lowers the pelvis when both knees bend (computed by the rig).
@@ -295,8 +322,8 @@ function Bench({state,dispatch,view,zoom,cameraReset,socketFocus,onReady,covered
       ghostNode.current.position.copy(liveSocket(state.count));
       ghostNode.current.rotation.y=state.count>=3 ? -state.pose.torso*DEGREES : 0;
     }
-    invalidate();
-  },[rig,state.pose,state.count,invalidate]);
+    changed();
+  },[rig,state.pose,state.count,changed]);
   useEffect(() => { onReady?.(); },[onReady]);
   useFrame((_,dt) => {
     const motion=landing.current;
@@ -304,6 +331,7 @@ function Bench({state,dispatch,view,zoom,cameraReset,socketFocus,onReady,covered
     motion.t=Math.min(1,motion.t+Math.min(.1,dt)/.27);
     const t=1-Math.pow(1-motion.t,3);
     outer.current[motion.index]?.position.lerpVectors(motion.start,motion.end,t);
+    gl.shadowMap.needsUpdate = true;
     if (motion.t===1) landing.current=null;
     else invalidate();
   });
@@ -315,7 +343,7 @@ function Bench({state,dispatch,view,zoom,cameraReset,socketFocus,onReady,covered
     if (controls.current) controls.current.enabled=true;
     if (gl.domElement.hasPointerCapture(drag.id)) drag.capture.releasePointerCapture(drag.id);
     gl.domElement.style.cursor="";
-    rest(drag.index); invalidate();
+    rest(drag.index); changed();
   }
   useEffect(() => {
     const el=gl.domElement;
@@ -333,8 +361,8 @@ function Bench({state,dispatch,view,zoom,cameraReset,socketFocus,onReady,covered
 
   useLayoutEffect(() => {
     if (covered) finishDrag();
-    else invalidate();
-  },[covered,invalidate]);
+    else changed();
+  },[covered,changed]);
 
   function begin(index:number,e:Pointer) {
     if (e.button!==0 || index<state.count || gesture.current) return;
@@ -372,7 +400,7 @@ function Bench({state,dispatch,view,zoom,cameraReset,socketFocus,onReady,covered
     }
     part.position.copy(distance<=BODY_SNAP_DISTANCE ? liveSocket(socket) : origin);
     part.rotation.set(0,s.rotation*DEGREES,0);
-    invalidate();
+    changed();
     return {socket,distance};
   }
   function move(e:Pointer) {
@@ -397,7 +425,7 @@ function Bench({state,dispatch,view,zoom,cameraReset,socketFocus,onReady,covered
     const raycast=new THREE.Raycaster();
     let held:number|null=null;
     function restore() {
-      if (held!==null) { rest(held); held=null; invalidate(); }
+      if (held!==null) { rest(held); held=null; changed(); }
     }
     function project(e:DragEvent,index:number) {
       const s=latest.current, rect=el.getBoundingClientRect();
@@ -480,9 +508,23 @@ class BodySceneBoundary extends Component<{children:ReactNode},{failed:boolean}>
   render() { return this.state.failed ? <MissingScene/> : this.props.children; }
 }
 export default function BodyScene(props:BodySceneProps) {
-  return <div style={{position:"absolute",inset:0,touchAction:"none"}} aria-label="Meja perakitan robot seluruh tubuh tiga dimensi">
+  const wrapper = useRef<HTMLDivElement>(null);
+  // Di layar lebar resolusi dibatasi oleh jumlah piksel, supaya beban GPU tidak ikut membesar.
+  const [budget,setBudget] = useState(1.5);
+  useEffect(() => {
+    const node = wrapper.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width,height } = entry.contentRect;
+      setBudget(Math.max(1,Math.round(Math.sqrt(2.2e6/Math.max(1,width*height))*20)/20));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  },[]);
+  const dpr = Math.min(1.5,budget,typeof window === "undefined" ? 1 : window.devicePixelRatio);
+  return <div ref={wrapper} style={{position:"absolute",inset:0,touchAction:"none"}} aria-label="Meja perakitan robot seluruh tubuh tiga dimensi">
     <BodySceneBoundary>
-      <Canvas frameloop={props.covered ? "never" : "demand"} dpr={[1,1.5]} camera={{position:[3,3,5],fov:33,near:.05,far:48}}
+      <Canvas frameloop={props.covered ? "never" : "demand"} dpr={dpr} camera={{position:[3,3,5],fov:33,near:.05,far:48}}
         gl={{antialias:true,alpha:false,powerPreference:"high-performance",toneMapping:THREE.ACESFilmicToneMapping,toneMappingExposure:.97}}
         shadows={{type:THREE.PCFSoftShadowMap}} fallback={<MissingScene/>} style={{touchAction:"none"}}>
         <Bench {...props}/>
